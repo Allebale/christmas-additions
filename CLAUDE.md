@@ -9,3 +9,6 @@
 
 - **Yoshi as Rudolph the red-nosed reindeer**, as a mod.
 - **A Santa costume for Mario**, as a mod.
+- **FLUDD shoots fast snowballs** in place of water, as a mod.
+- **Christmas FLUDD**: every FLUDD model reskinned to look Christmassy, in first person (held in view) and third
+  person (on his back), as a mod.
