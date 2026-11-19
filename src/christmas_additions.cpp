@@ -343,6 +343,9 @@ void rudolphNoseSnow(Mesh& m)
 struct RestFrame {
 	V at, x, y, z;
 };
+// His face, cap and moustache hang on "M_head" (a child of jnt_head, at rest in the same place), which the game
+// turns on its own as he looks about: what goes on his face goes there too
+const char kFaceJoint[] = "M_head";
 const RestFrame kMarioHead  = {{0, 97, -3.004f}, {-0.0001f, 0.0002f, 1}, {0, -1, 0.0002f}, {1, 0, 0.0001f}};
 const RestFrame kMarioWaist = {{0, 58, 0}, {0.0001f, -1, 0}, {0.0001f, 0, -1}, {1, 0.0001f, 0.0001f}};
 const RestFrame kMarioArmR  = {{-29.425f, 80.107f, -5.553f}, {-0.9675f, 0, 0.253f}, {-0.253f, 0.0002f, -0.9675f}, {0, -1, -0.0002f}};
@@ -1209,15 +1212,15 @@ struct ChristmasAdditions : sms::Mod {
 			shaveMoustache(mario, noTache || (suit && config().get_int(handle(), "santa_beard", 0) != 0));
 		// with his moustache gone (and his model the game's own), a mouth where it was
 		if (mario && tacheGone && !tacheLeft && !firstPerson())
-			drawOn(mario, "jnt_head", sMouth);
+			drawOn(mario, kFaceJoint, sMouth);
 		if (mario && suit) {
 			if (!firstPerson()) {
-				drawOn(mario, "jnt_head", sHat);
+				drawOn(mario, kFaceJoint, sHat);
 				if (config().get_int(handle(), "santa_beard", 0)) {
 					// his own moustache goes with the beard (shaveMoustache); a white one unless he is clean shaven
-					drawOn(mario, "jnt_head", sBeard);
+					drawOn(mario, kFaceJoint, sBeard);
 					if (!noTache)
-						drawOn(mario, "jnt_head", sTache);
+						drawOn(mario, kFaceJoint, sTache);
 				}
 			}
 			drawOn(mario, "jnt_waist", sBelt);
