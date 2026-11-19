@@ -217,39 +217,75 @@ void snowmanArms(Mesh& m)
 	}
 }
 
-// Rudolph's antlers and nose, in a frame of the mod's own on Yoshi's head (rudolphFrame): x up, y the way
-// his snout points (level), z to his side; the antlers' roots at the head joint, the nose at the mouth's
-const Rgb kAntler = {156, 112, 70}, kAntlerTip = {196, 160, 112}, kNose = {236, 26, 30};
+// Rudolph's antlers, ears and nose. Made in Yoshi's model's own rest pose (yoshi_model.bmd: x his left,
+// y up, z forward; feet at 0, the top of his head at about 168, the tip of his snout at z 63, its nose
+// point null_nose at 0 144 56), then put into his head joint's frame ("jnt_head", at 0 101 0 at rest:
+// its x forward, y down, z his left), so they move with his head as the game poses it.
+const Rgb kAntler = {150, 108, 66}, kAntlerTip = {204, 170, 120}, kNose = {236, 26, 30}, kEar = {122, 78, 46},
+          kEarIn = {214, 168, 132};
+const V kHeadAt = {-0.0000316f, 101.3156f, -0.0088f};
+const V kHeadX = {-0.0000959f, -0.0185984f, 0.9998270f}, kHeadY = {0.0000018f, -0.9998270f, -0.0185984f},
+        kHeadZ = {1.0f, 0.0f, 0.0000959f};
+const V kNoseAt = {0, 143, 61}; // the red nose's middle, on the tip of his snout
+V restToHead(V p)
+{
+	V rel = sub(p, kHeadAt);
+	return v(dot(rel, kHeadX), dot(rel, kHeadY), dot(rel, kHeadZ));
+}
+void intoHead(Mesh& m)
+{
+	for (size_t i = 0; i < m.corners.size(); i++) {
+		V q = restToHead(v(m.corners[i].x, m.corners[i].y, m.corners[i].z));
+		m.corners[i].x = q.x, m.corners[i].y = q.y, m.corners[i].z = q.z;
+	}
+}
 void antler(Mesh& m, float s)
 {
-	// a beam up from the head, curving back and out, with three tines forward
+	// a beam from the top of his head behind the eyes, up, out and a little back, three tines forward
 	std::vector<V> c;
 	std::vector<float> r;
 	const int n = 8;
 	for (int i = 0; i <= n; i++) {
 		float t = (float)i / n;
-		c.push_back(v(30 + 78 * t, -6 - 30 * t + 16 * t * t, s * (24 + 34 * t)));
-		r.push_back(7.5f * (1 - t) + 3 * t);
+		c.push_back(v(s * (13 + 30 * t), 158 + 58 * t - 6 * t * t, -4 - 16 * t + 8 * t * t));
+		r.push_back(4.6f * (1 - t) + 1.8f * t);
 	}
 	m.tube(c, r, kAntler, 10);
-	const float at[3] = {0.35f, 0.62f, 0.88f}, len[3] = {30, 26, 20};
+	const float at[3] = {0.3f, 0.58f, 0.85f}, len[3] = {20, 18, 13};
 	for (int k = 0; k < 3; k++) {
-		int i  = (int)(at[k] * n);
+		int i  = (int)(at[k] * n + 0.5f);
 		V root = c[i];
-		V tip  = add(root, v(len[k] * 0.8f, len[k] * 0.7f, s * len[k] * 0.15f));
-		m.cylinder(root, tip, r[i] * 0.8f, 1.8f, k == 2 ? kAntlerTip : kAntler, 8);
+		V tip  = add(root, v(s * len[k] * 0.15f, len[k] * 0.65f, len[k] * 0.75f));
+		m.cylinder(root, tip, r[i] * 0.75f, 1.2f, k == 2 ? kAntlerTip : kAntler, 8);
 	}
+}
+void ear(Mesh& m, float s)
+{
+	// a leaf-shaped ear out from the side of his head, below the antler
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 5; i++) {
+		float t = i / 5.0f;
+		c.push_back(v(s * (20 + 20 * t), 150 + 4 * t, -8 - 4 * t));
+		r.push_back(6.5f * sinf(kPi * (0.15f + 0.85f * t)) + 0.6f);
+	}
+	m.tube(c, r, kEar, 10);
 }
 void rudolphAntlers(Mesh& m)
 {
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
 	antler(m, 1);
 	antler(m, -1);
+	ear(m, 1);
+	ear(m, -1);
+	intoHead(m);
 }
 void rudolphNose(Mesh& m)
 {
-	m.light = norm(v(0.4f, 0.9f, 0.2f));
-	m.sphere(v(0, 0, 0), 24, kNose, 16, 10);
-	m.sphere(onBall(v(0, 0, 0), 17, 40, -25), 6, Rgb{255, 190, 190}, 8, 6); // a shine
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	m.sphere(kNoseAt, 13, kNose, 16, 10);
+	m.sphere(add(kNoseAt, v(-4, 6, 9)), 3.5f, Rgb{255, 200, 200}, 8, 6); // a shine
+	intoHead(m);
 }
 
 // Names as the game keeps them (Shift JIS)
@@ -364,8 +400,7 @@ struct ChristmasAdditions : sms::Mod {
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0;
-	bool rudolphOn = false, yoshiLogged = false; // Yoshi's colour set; his joints logged
-	char yoshiHead[32];
+	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
@@ -655,55 +690,24 @@ struct ChristmasAdditions : sms::Mod {
 			rudolphOn = want;
 		}
 		SmsObject y = want ? parts->player_part(SMS_PARTS_YOSHI) : nullptr;
-		if (!y)
+		float hm[3][4];
+		if (!y || !parts->joint(y, "jnt_head", hm))
 			return;
-		if (!yoshiLogged) {
-			// his joints, once: a joint with "head" in its name carries the antlers, else his neck's top
-			yoshiLogged   = true;
-			yoshiHead[0]  = 0;
-			int count     = parts->joint_count(y);
-			for (int i = 0; i < count; i++) {
-				const char* n = parts->joint_name(y, i);
-				float jm[3][4];
-				if (n && parts->joint(y, n, jm))
-					info("yoshi joint %d %s at %.0f %.0f %.0f", i, n, jm[0][3], jm[1][3], jm[2][3]);
-				if (n && !yoshiHead[0] && (strstr(n, "head") || strstr(n, "Head")))
-					snprintf(yoshiHead, sizeof yoshiHead, "%s", n);
-			}
-			if (!yoshiHead[0])
-				snprintf(yoshiHead, sizeof yoshiHead, "%s", "jnt_neck_2");
-			info("rudolph: antlers on %s", yoshiHead);
-		}
-		float hm[3][4], mm[3][4];
-		if (!parts->joint(y, yoshiHead, hm) || !parts->joint(y, "jnt_mouth", mm))
-			return;
-		V headAt = v(hm[0][3], hm[1][3], hm[2][3]), mouth = v(mm[0][3], mm[1][3], mm[2][3]);
-		V fwd = sub(mouth, headAt);
-		fwd.y = 0;
-		if (dot(fwd, fwd) < 1)
-			return;
-		fwd = norm(fwd);
-		V up = v(0, 1, 0), side = cross(fwd, up);
-		// columns: x up, y forward, z side
-		float f[3][4];
-		const V axes[3] = {up, fwd, side};
-		for (int r = 0; r < 3; r++)
-			for (int k = 0; k < 3; k++)
-				f[r][k] = (&axes[k].x)[r];
-		f[0][3] = headAt.x, f[1][3] = headAt.y, f[2][3] = headAt.z;
-		draw(antlers, f);
-		// the nose: on the front of his snout, over the mouth
-		V noseAt = add(add(mouth, mul(fwd, 26)), mul(up, 30));
-		f[0][3] = noseAt.x, f[1][3] = noseAt.y, f[2][3] = noseAt.z;
-		draw(nose, f);
-		// its glow, facing the camera, pulsing a little
+		draw(antlers, hm);
+		draw(nose, hm);
+		// the nose's glow, facing the camera, pulsing a little
 		if (cam && puffTex) {
+			V l = restToHead(kNoseAt), at;
+			at.x = hm[0][0] * l.x + hm[0][1] * l.y + hm[0][2] * l.z + hm[0][3];
+			at.y = hm[1][0] * l.x + hm[1][1] * l.y + hm[1][2] * l.z + hm[1][3];
+			at.z = hm[2][0] * l.x + hm[2][1] * l.y + hm[2][2] * l.z + hm[2][3];
+			float scale = sqrtf(hm[0][0] * hm[0][0] + hm[1][0] * hm[1][0] + hm[2][0] * hm[2][0]);
 			V right = norm(v(cam->view[0][0], cam->view[0][1], cam->view[0][2]));
 			V camUp = norm(v(cam->view[1][0], cam->view[1][1], cam->view[1][2]));
-			float g = 70 + 8 * sinf(now * 3.0f);
+			float g = (34 + 4 * sinf(now * 3.0f)) * scale;
 			V hr = mul(right, g), hu = mul(camUp, g);
 			std::vector<SmsTexCorner> c;
-			quad(c, add(sub(noseAt, hr), hu), add(add(noseAt, hr), hu), sub(add(noseAt, hr), hu), sub(sub(noseAt, hr), hu), 255, 40, 30, 150);
+			quad(c, add(sub(at, hr), hu), add(add(at, hr), hu), sub(add(at, hr), hu), sub(sub(at, hr), hu), 255, 40, 30, 140);
 			api().models->draw_textured(&c[0], (int)c.size(), puffTex, SMS_BLEND_ADD);
 		}
 	}

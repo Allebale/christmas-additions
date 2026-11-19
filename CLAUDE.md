@@ -11,9 +11,10 @@ Christmas Mountain got a Yoshi egg by the start, with a coconut, papaya, pineapp
 (the game picks one of those outside Delfino Plaza; the egg only shows once Yoshi is freed in the Plaza).
 Next, in order:
 
-- **Yoshi as Rudolph** (1.2.0, first try): brown via parts->yoshi_color, antlers on a joint with "head" in its
-  name (else jnt_neck_2) and a glowing nose ahead of jnt_mouth, in a level frame of the mod's own. Placement is
-  guessed: the log's "yoshi joint" lines give his joints' places to tune it.
+- **Yoshi as Rudolph** (1.2.1): brown via parts->yoshi_color; antlers, ears and a red nose made in
+  yoshi_model.bmd's rest pose (Allebale sent yoshi.szs: jnt_head at 0 101 0, its x forward, y down, z left;
+  null_nose 0 144 56; snout tip z 63; head top 168) and drawn on jnt_head. Materials: _mat_yo_body, _head,
+  _nose (the nostrils), _mouse, _eye_L/R, _foot1_R (feet; (3) is the saddle), _hand1_R.
 - **A Santa costume for Mario**, as a mod.
 - **FLUDD shoots fast snowballs** in place of water, as a mod.
 - **Christmas FLUDD**: every FLUDD model reskinned to look Christmassy, in first person (held in view) and third
