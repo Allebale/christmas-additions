@@ -286,8 +286,8 @@ void rudolphNose(Mesh& m)
 	m.sphere(kNoseAt, 13, kNose, 16, 10);
 	intoHead(m);
 }
-// A little snow fallen on top of his nose (the "rudolph_nose_snow" option): a thin, lumpy cap over its
-// top, its edge ragged, a touch blue in its hollows, and a few clumps on it
+// A little snow fallen on top of his nose (the "rudolph_nose_snow" option; Allebale asked for less): a
+// small, thin patch on its very top, its edge ragged, a touch blue at the edge, and two small clumps
 void rudolphNoseSnow(Mesh& m)
 {
 	m.light = norm(v(0.2f, 0.9f, 0.4f));
@@ -298,10 +298,10 @@ void rudolphNoseSnow(Mesh& m)
 		for (int k = 0; k < seg; k++) {
 			float az   = 2 * kPi * k / seg;
 			// the edge comes down further at the back and the sides than at the front, and wavers
-			float edge = 0.62f + 0.12f * cosf(az) + 0.07f * sinf(3 * az + 1.3f) + 0.05f * sinf(7 * az);
+			float edge = 0.98f + 0.10f * cosf(az) + 0.06f * sinf(3 * az + 1.3f) + 0.04f * sinf(7 * az);
 			float t    = (float)i / rings;                      // 0 the top, 1 the edge
 			float el   = kPi / 2 - t * (kPi / 2 - edge);        // elevation over the nose's middle
-			float lump = 0.9f + 0.55f * (1 - t) * (0.6f + 0.4f * sinf(5 * az + 2 * i)); // thickest on top
+			float lump = 0.5f + 0.35f * (1 - t) * (0.6f + 0.4f * sinf(5 * az + 2 * i)); // thickest on top
 			float r    = 13.4f + lump * (1 - t * 0.8f);
 			ring[i].push_back(add(kNoseAt, v(r * cosf(el) * sinf(az), r * sinf(el), r * cosf(el) * cosf(az))));
 		}
@@ -310,10 +310,10 @@ void rudolphNoseSnow(Mesh& m)
 			int k2 = (k + 1) % seg;
 			m.quad(ring[i][k], ring[i + 1][k], ring[i + 1][k2], ring[i][k2], i == rings - 1 ? shade : snow);
 		}
-	for (int k = 0; k < 3; k++) { // clumps
-		float az = 0.8f + 2.1f * k, el = 1.15f + 0.12f * k;
-		V at = add(kNoseAt, v(14.2f * cosf(el) * sinf(az), 14.2f * sinf(el), 14.2f * cosf(el) * cosf(az)));
-		m.sphere(at, 1.6f + 0.5f * k, snow, 8, 5);
+	for (int k = 0; k < 2; k++) { // clumps
+		float az = 0.8f + 2.6f * k, el = 1.3f + 0.1f * k;
+		V at = add(kNoseAt, v(13.9f * cosf(el) * sinf(az), 13.9f * sinf(el), 13.9f * cosf(el) * cosf(az)));
+		m.sphere(at, 1.2f + 0.4f * k, snow, 8, 5);
 	}
 	intoHead(m);
 }
