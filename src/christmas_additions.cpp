@@ -217,6 +217,41 @@ void snowmanArms(Mesh& m)
 	}
 }
 
+// Rudolph's antlers and nose, in a frame of the mod's own on Yoshi's head (rudolphFrame): x up, y the way
+// his snout points (level), z to his side; the antlers' roots at the head joint, the nose at the mouth's
+const Rgb kAntler = {156, 112, 70}, kAntlerTip = {196, 160, 112}, kNose = {236, 26, 30};
+void antler(Mesh& m, float s)
+{
+	// a beam up from the head, curving back and out, with three tines forward
+	std::vector<V> c;
+	std::vector<float> r;
+	const int n = 8;
+	for (int i = 0; i <= n; i++) {
+		float t = (float)i / n;
+		c.push_back(v(30 + 78 * t, -6 - 30 * t + 16 * t * t, s * (24 + 34 * t)));
+		r.push_back(7.5f * (1 - t) + 3 * t);
+	}
+	m.tube(c, r, kAntler, 10);
+	const float at[3] = {0.35f, 0.62f, 0.88f}, len[3] = {30, 26, 20};
+	for (int k = 0; k < 3; k++) {
+		int i  = (int)(at[k] * n);
+		V root = c[i];
+		V tip  = add(root, v(len[k] * 0.8f, len[k] * 0.7f, s * len[k] * 0.15f));
+		m.cylinder(root, tip, r[i] * 0.8f, 1.8f, k == 2 ? kAntlerTip : kAntler, 8);
+	}
+}
+void rudolphAntlers(Mesh& m)
+{
+	antler(m, 1);
+	antler(m, -1);
+}
+void rudolphNose(Mesh& m)
+{
+	m.light = norm(v(0.4f, 0.9f, 0.2f));
+	m.sphere(v(0, 0, 0), 24, kNose, 16, 10);
+	m.sphere(onBall(v(0, 0, 0), 17, 40, -25), 6, Rgb{255, 190, 190}, 8, 6); // a shine
+}
+
 // Names as the game keeps them (Shift JIS)
 const char kDango[] = "\x82\xbe\x82\xf1\x82\xb2\x83\x6e\x83\x80\x83\x4e\x83\x8a"; // だんごハムクリ
 const char kMonte[] = "\x83\x82\x83\x93\x83\x65";                                 // モンテ (a Pianta)
@@ -328,6 +363,9 @@ struct ChristmasAdditions : sms::Mod {
 
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
+	SmsMesh antlers = 0, nose = 0;
+	bool rudolphOn = false, yoshiLogged = false; // Yoshi's colour set; his joints logged
+	char yoshiHead[32];
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
@@ -604,8 +642,81 @@ struct ChristmasAdditions : sms::Mod {
 		set.clear();
 	}
 
+	bool partsHave(size_t end) { return parts && parts->size >= end; }
+
+	// Yoshi as Rudolph: reindeer brown whatever fruit he ate, antlers, and a glowing red nose
+	void rudolph(const SmsCamera* cam)
+	{
+		if (!partsHave(offsetof(SmsPartsApi, yoshi_color) + sizeof(void*)))
+			return;
+		const bool want = config().get_int(handle(), "rudolph", 1) != 0;
+		if (want != rudolphOn) {
+			parts->yoshi_color(want ? 0x7A4E2EFFu : 0u);
+			rudolphOn = want;
+		}
+		SmsObject y = want ? parts->player_part(SMS_PARTS_YOSHI) : nullptr;
+		if (!y)
+			return;
+		if (!yoshiLogged) {
+			// his joints, once: a joint with "head" in its name carries the antlers, else his neck's top
+			yoshiLogged   = true;
+			yoshiHead[0]  = 0;
+			int count     = parts->joint_count(y);
+			for (int i = 0; i < count; i++) {
+				const char* n = parts->joint_name(y, i);
+				float jm[3][4];
+				if (n && parts->joint(y, n, jm))
+					info("yoshi joint %d %s at %.0f %.0f %.0f", i, n, jm[0][3], jm[1][3], jm[2][3]);
+				if (n && !yoshiHead[0] && (strstr(n, "head") || strstr(n, "Head")))
+					snprintf(yoshiHead, sizeof yoshiHead, "%s", n);
+			}
+			if (!yoshiHead[0])
+				snprintf(yoshiHead, sizeof yoshiHead, "%s", "jnt_neck_2");
+			info("rudolph: antlers on %s", yoshiHead);
+		}
+		float hm[3][4], mm[3][4];
+		if (!parts->joint(y, yoshiHead, hm) || !parts->joint(y, "jnt_mouth", mm))
+			return;
+		V headAt = v(hm[0][3], hm[1][3], hm[2][3]), mouth = v(mm[0][3], mm[1][3], mm[2][3]);
+		V fwd = sub(mouth, headAt);
+		fwd.y = 0;
+		if (dot(fwd, fwd) < 1)
+			return;
+		fwd = norm(fwd);
+		V up = v(0, 1, 0), side = cross(fwd, up);
+		// columns: x up, y forward, z side
+		float f[3][4];
+		const V axes[3] = {up, fwd, side};
+		for (int r = 0; r < 3; r++)
+			for (int k = 0; k < 3; k++)
+				f[r][k] = (&axes[k].x)[r];
+		f[0][3] = headAt.x, f[1][3] = headAt.y, f[2][3] = headAt.z;
+		draw(antlers, f);
+		// the nose: on the front of his snout, over the mouth
+		V noseAt = add(add(mouth, mul(fwd, 26)), mul(up, 30));
+		f[0][3] = noseAt.x, f[1][3] = noseAt.y, f[2][3] = noseAt.z;
+		draw(nose, f);
+		// its glow, facing the camera, pulsing a little
+		if (cam && puffTex) {
+			V right = norm(v(cam->view[0][0], cam->view[0][1], cam->view[0][2]));
+			V camUp = norm(v(cam->view[1][0], cam->view[1][1], cam->view[1][2]));
+			float g = 70 + 8 * sinf(now * 3.0f);
+			V hr = mul(right, g), hu = mul(camUp, g);
+			std::vector<SmsTexCorner> c;
+			quad(c, add(sub(noseAt, hr), hu), add(add(noseAt, hr), hu), sub(add(noseAt, hr), hu), sub(sub(noseAt, hr), hu), 255, 40, 30, 150);
+			api().models->draw_textured(&c[0], (int)c.size(), puffTex, SMS_BLEND_ADD);
+		}
+	}
+
 	void tick()
 	{
+		{
+			SmsCamera cam;
+			memset(&cam, 0, sizeof cam);
+			cam.size = sizeof cam;
+			bool camOk = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
+			rudolph(camOk ? &cam : nullptr);
+		}
 		const bool hats = config().get_int(handle(), "santa_hats", 1) != 0;
 		const bool clothes = config().get_int(handle(), "winter_clothes", 1) != 0;
 		const bool snowmen = config().get_int(handle(), "snowmen", 1) != 0;
@@ -702,6 +813,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("exit_return", "Back through a level's door, start beside it", true);
 		optionBool("snow_steps", "White footprints and puffs of snow in snowy levels", true);
 		optionChoice("snowfall", "Falling snow", {"Off", "In snowy levels", "Everywhere"}, 1);
+		optionBool("rudolph", "Yoshi is Rudolph the red-nosed reindeer", true);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
@@ -734,6 +846,8 @@ struct ChristmasAdditions : sms::Mod {
 			warn("this game has no api->parts (Super Mario Sunshine Remastered's): no hats, clothes or snowmen");
 			return 0;
 		}
+		antlers = make(rudolphAntlers);
+		nose    = make(rudolphNose);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
 		buttons = make(snowmanButtons);
@@ -741,7 +855,7 @@ struct ChristmasAdditions : sms::Mod {
 
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(); }); // the tints went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
-		info("loaded: Santa hats, winter clothes and snowmen");
+		info("loaded: Santa hats, winter clothes, snowmen and Rudolph");
 		return 0;
 	}
 };
