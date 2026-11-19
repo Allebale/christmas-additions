@@ -23,5 +23,7 @@ Next, in order:
   froater(3) (handles) gold; the tank (_mat_G_main_tank, a drum along x -3..33 round y -40) wrapped in a gold
   ribbon with a bow and holly on its back (-y). The nozzles are models of their own, untouched. 1.3.1: his cap
   off under the Santa hat (player SMS_PLAYER_PART_CAP and parts->hide of _mat_head(7), game 251a788), and a
-  no-moustache option (skin-coloured copy of the moustache triangles, with the beard).
+  no-moustache option. 1.4.0: the moustache really gone with the beard: its 31 vertices (a piece of its own
+  in the face) folded to a point inside his head with parts->set_vertex (game 9877918), put back after; a
+  skin-coloured cover only left a flesh moustache (Allebale).
 - **FLUDD shoots fast snowballs** in place of water, as a mod.
