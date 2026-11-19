@@ -491,6 +491,40 @@ float faceRadius(float th, float y)
 	float lo = kFaceR[a0][h0] * (1 - fa) + kFaceR[a1][h0] * fa, hi = kFaceR[a0][h1] * (1 - fa) + kFaceR[a1][h1] * fa;
 	return lo * (1 - fh) + hi * fh;
 }
+// A smiling mouth for him without his moustache (it hid where his mouth would be): open a little, dark red
+// inside, a tongue at its bottom, lying on his face under his nose (a grid over the crescent, each point
+// carried out to his face's surface)
+V onFace(float x, float y, float out)
+{
+	float r = faceRadius(0, y) + out;
+	float zz = r * r - x * x;
+	return v(x, y, 3 + sqrtf(zz > 1 ? zz : 1.0f));
+}
+void crescent(Mesh& m, float w, float yTop, float sag, float lift, float yBottom, float out, Rgb col)
+{
+	// top edge: a smile, its corners `lift` up; bottom edge: `yBottom` deep in the middle
+	const int nx = 14, ny = 4;
+	for (int i = 0; i < nx; i++)
+		for (int k = 0; k < ny; k++) {
+			V q[4];
+			const int di[4] = {0, 1, 1, 0}, dk[4] = {0, 0, 1, 1};
+			for (int c = 0; c < 4; c++) {
+				float sx = -1 + 2.0f * (i + di[c]) / nx, t = (float)(k + dk[c]) / ny;
+				float x = sx * w, top = yTop - sag * (1 - sx * sx) + lift * sx * sx * sx * sx;
+				float bot = top - yBottom * (1 - sx * sx);
+				q[c] = onFace(x, top + (bot - top) * t, out);
+			}
+			m.quad(q[0], q[3], q[2], q[1], col);
+		}
+}
+void marioMouth(Mesh& m)
+{
+	m.light = norm(v(0, 0.3f, 1));
+	crescent(m, 8.5f, 91.5f, 1.2f, 1.6f, 4.2f, 0.45f, Rgb{96, 18, 26});  // the open mouth
+	crescent(m, 4.5f, 88.6f, 0.2f, 0.0f, 1.5f, 0.6f, Rgb{226, 96, 108}); // the tongue
+	intoFrame(m, kMarioHead);
+}
+
 // a point of the beard: its inside (outer 0) on his face, a hair out; its outside thicker in the middle of
 // its length and waving in locks
 V beardPoint(float u, float vv, float outer)
@@ -747,6 +781,7 @@ struct ChristmasAdditions : sms::Mod {
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
 	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, sTache = 0, fluddDeco = 0;
+	SmsMesh sMouth = 0;
 	bool tacheGone = false, tacheLeft = false; // his own moustache folded away; or never touched (not the game's model)
 	bool capOff = false; // his own cap left out
 	bool santaOn = false, fluddOn = false; // tints put on
@@ -1151,6 +1186,9 @@ struct ChristmasAdditions : sms::Mod {
 		const bool noTache = config().get_int(handle(), "no_moustache", 0) != 0;
 		if (mario)
 			shaveMoustache(mario, noTache || (suit && config().get_int(handle(), "santa_beard", 0) != 0));
+		// with his moustache gone (and his model the game's own), a mouth where it was
+		if (mario && tacheGone && !tacheLeft && !firstPerson())
+			drawOn(mario, "jnt_head", sMouth);
 		if (mario && suit) {
 			if (!firstPerson()) {
 				drawOn(mario, "jnt_head", sHat);
@@ -1326,6 +1364,7 @@ struct ChristmasAdditions : sms::Mod {
 		sLegL    = make(santaLegCuffL);
 		sBeard   = make(santaBeard);
 		sTache   = make(santaMoustache);
+		sMouth   = make(marioMouth);
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
