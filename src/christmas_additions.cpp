@@ -447,10 +447,96 @@ void santaBeard(Mesh& m)
 		}
 	}
 	m.sphere(v(0, 74, 18), 9, kFur, 12, 8); // its point
-	m.sphere(v(-8, 96.5f, 31), 6.2f, kFur, 10, 7); // the moustache, over his own
+	intoFrame(m, kMarioHead);
+}
+// a white moustache over his own, with the beard
+void santaMoustache(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	m.sphere(v(-8, 96.5f, 31), 6.2f, kFur, 10, 7);
 	m.sphere(v(8, 96.5f, 31), 6.2f, kFur, 10, 7);
 	m.sphere(v(-15, 95, 27), 5, kFur, 10, 7);
 	m.sphere(v(15, 95, 27), 5, kFur, 10, 7);
+	intoFrame(m, kMarioHead);
+}
+// His own moustache gone (the "santa_no_moustache" option, with the beard): its triangles in his face
+// (ma_mdl1's _mat_head(8), those with a dark corner under his nose), a hair out from it, in his skin's colour
+const float kMoustache[][3][3] = {
+	{{2.25f, 93.12f, 22.08f}, {5.26f, 93.82f, 21.62f}, {4.64f, 102.48f, 22.95f}},
+	{{4.66f, 102.49f, 22.94f}, {5.28f, 93.83f, 21.62f}, {7.54f, 95.42f, 21.26f}},
+	{{4.68f, 102.50f, 22.94f}, {7.56f, 95.43f, 21.25f}, {7.90f, 103.04f, 21.98f}},
+	{{7.87f, 103.04f, 21.99f}, {7.53f, 95.43f, 21.26f}, {9.96f, 95.51f, 20.77f}},
+	{{7.92f, 103.06f, 21.97f}, {10.02f, 95.53f, 20.76f}, {10.59f, 103.89f, 21.00f}},
+	{{10.65f, 103.89f, 20.98f}, {10.07f, 95.53f, 20.73f}, {12.63f, 96.44f, 19.28f}},
+	{{10.62f, 103.88f, 20.99f}, {12.60f, 96.43f, 19.29f}, {14.48f, 100.11f, 18.71f}},
+	{{0.03f, 93.81f, 22.46f}, {0.03f, 97.77f, 25.65f}, {-2.16f, 92.95f, 22.01f}},
+	{{-0.09f, 97.81f, 25.66f}, {-5.28f, 93.69f, 21.57f}, {-2.28f, 92.99f, 22.03f}},
+	{{-0.06f, 97.79f, 25.65f}, {-6.03f, 97.75f, 24.35f}, {-5.26f, 93.67f, 21.56f}},
+	{{-6.14f, 97.76f, 24.30f}, {-7.64f, 95.27f, 21.15f}, {-5.37f, 93.68f, 21.52f}},
+	{{-6.03f, 97.69f, 24.30f}, {-9.95f, 95.29f, 20.66f}, {-7.52f, 95.21f, 21.15f}},
+	{{-0.05f, 93.97f, 22.53f}, {-0.05f, 102.29f, 24.05f}, {-2.24f, 93.11f, 22.08f}},
+	{{-2.27f, 93.12f, 22.07f}, {-0.09f, 102.30f, 24.04f}, {-4.66f, 102.48f, 22.94f}},
+	{{-2.25f, 93.12f, 22.08f}, {-4.64f, 102.48f, 22.95f}, {-5.26f, 93.82f, 21.62f}},
+	{{-5.28f, 93.83f, 21.62f}, {-4.67f, 102.49f, 22.94f}, {-7.55f, 95.42f, 21.25f}},
+	{{-10.09f, 95.45f, 20.70f}, {-6.16f, 97.85f, 24.34f}, {-12.64f, 96.36f, 19.25f}},
+	{{-6.16f, 97.84f, 24.34f}, {-13.84f, 101.53f, 20.55f}, {-12.64f, 96.35f, 19.25f}},
+	{{-6.07f, 98.06f, 24.38f}, {-7.90f, 103.19f, 21.96f}, {-13.76f, 101.75f, 20.59f}},
+	{{-7.90f, 103.16f, 21.97f}, {-10.57f, 103.98f, 21.00f}, {-13.75f, 101.72f, 20.61f}},
+	{{14.60f, 100.03f, 18.58f}, {13.93f, 101.53f, 20.47f}, {12.72f, 96.35f, 19.16f}},
+	{{13.84f, 101.53f, 20.55f}, {6.15f, 97.84f, 24.34f}, {12.64f, 96.35f, 19.25f}},
+	{{13.75f, 101.75f, 20.60f}, {7.90f, 103.19f, 21.96f}, {6.07f, 98.06f, 24.38f}},
+	{{7.87f, 103.20f, 21.96f}, {4.65f, 102.66f, 22.92f}, {6.04f, 98.07f, 24.39f}},
+	{{10.64f, 103.91f, 20.98f}, {14.50f, 100.14f, 18.70f}, {12.81f, 104.87f, 19.70f}},
+	{{12.79f, 104.86f, 19.70f}, {14.49f, 100.14f, 18.70f}, {16.90f, 100.88f, 17.45f}},
+	{{12.84f, 104.93f, 19.67f}, {16.95f, 100.95f, 17.41f}, {17.72f, 103.53f, 16.22f}},
+	{{-12.73f, 96.35f, 19.16f}, {-13.93f, 101.53f, 20.47f}, {-14.60f, 100.03f, 18.58f}},
+	{{-13.83f, 101.44f, 20.50f}, {-16.92f, 100.68f, 17.36f}, {-14.51f, 99.94f, 18.62f}},
+	{{-13.91f, 101.68f, 20.52f}, {-17.77f, 103.50f, 16.19f}, {-17.00f, 100.92f, 17.37f}},
+	{{-15.83f, 106.63f, 16.97f}, {-17.72f, 103.53f, 16.22f}, {-12.85f, 104.93f, 19.66f}},
+	{{-12.85f, 104.93f, 19.66f}, {-17.72f, 103.53f, 16.22f}, {-16.95f, 100.95f, 17.41f}},
+	{{-12.80f, 104.86f, 19.70f}, {-16.91f, 100.88f, 17.44f}, {-14.49f, 100.14f, 18.70f}},
+	{{-12.81f, 104.87f, 19.69f}, {-14.51f, 100.14f, 18.69f}, {-10.65f, 103.91f, 20.97f}},
+	{{-10.63f, 103.88f, 20.99f}, {-14.49f, 100.11f, 18.70f}, {-12.61f, 96.43f, 19.29f}},
+	{{-10.65f, 103.89f, 20.97f}, {-12.63f, 96.44f, 19.28f}, {-10.07f, 95.53f, 20.73f}},
+	{{-10.60f, 103.89f, 21.00f}, {-10.02f, 95.53f, 20.76f}, {-7.93f, 103.06f, 21.97f}},
+	{{-7.87f, 103.04f, 21.98f}, {-9.97f, 95.51f, 20.77f}, {-7.53f, 95.43f, 21.26f}},
+	{{-7.91f, 103.04f, 21.97f}, {-7.57f, 95.43f, 21.25f}, {-4.69f, 102.50f, 22.94f}},
+	{{7.89f, 103.16f, 21.97f}, {13.75f, 101.72f, 20.61f}, {10.56f, 103.98f, 21.00f}},
+	{{13.78f, 101.76f, 20.58f}, {12.76f, 104.99f, 19.70f}, {10.59f, 104.03f, 20.98f}},
+	{{13.82f, 101.77f, 20.56f}, {15.79f, 106.70f, 16.98f}, {12.80f, 105.00f, 19.67f}},
+	{{12.64f, 96.36f, 19.25f}, {6.16f, 97.85f, 24.34f}, {10.08f, 95.45f, 20.71f}},
+	{{6.02f, 97.69f, 24.30f}, {7.51f, 95.21f, 21.15f}, {9.95f, 95.29f, 20.66f}},
+	{{6.14f, 97.76f, 24.30f}, {5.37f, 93.68f, 21.52f}, {7.63f, 95.27f, 21.15f}},
+	{{15.85f, 106.65f, 16.95f}, {13.89f, 101.72f, 20.53f}, {17.75f, 103.55f, 16.19f}},
+	{{13.90f, 101.68f, 20.52f}, {16.99f, 100.92f, 17.38f}, {17.76f, 103.50f, 16.19f}},
+	{{13.83f, 101.44f, 20.51f}, {14.50f, 99.94f, 18.62f}, {16.92f, 100.68f, 17.36f}},
+	{{-0.07f, 98.11f, 25.70f}, {-0.07f, 102.47f, 24.03f}, {-6.04f, 98.07f, 24.39f}},
+	{{-0.07f, 102.48f, 24.03f}, {-4.65f, 102.66f, 22.92f}, {-6.04f, 98.07f, 24.39f}},
+	{{-10.60f, 104.03f, 20.98f}, {-12.76f, 104.99f, 19.70f}, {-13.78f, 101.76f, 20.58f}},
+	{{-12.81f, 105.00f, 19.67f}, {-15.80f, 106.70f, 16.97f}, {-13.83f, 101.77f, 20.55f}},
+	{{0.04f, 93.97f, 22.53f}, {2.23f, 93.11f, 22.08f}, {0.04f, 102.29f, 24.05f}},
+	{{0.08f, 102.30f, 24.04f}, {2.27f, 93.12f, 22.08f}, {4.66f, 102.48f, 22.94f}},
+	{{4.65f, 102.66f, 22.92f}, {0.07f, 102.48f, 24.03f}, {6.04f, 98.07f, 24.39f}},
+	{{0.07f, 102.47f, 24.03f}, {0.07f, 98.11f, 25.70f}, {6.04f, 98.07f, 24.39f}},
+	{{-0.03f, 93.81f, 22.46f}, {2.16f, 92.95f, 22.01f}, {-0.03f, 97.77f, 25.65f}},
+	{{2.27f, 92.99f, 22.03f}, {5.28f, 93.69f, 21.57f}, {0.08f, 97.81f, 25.66f}},
+	{{-0.16f, 97.83f, 21.30f}, {-0.16f, 97.31f, 24.26f}, {5.05f, 99.97f, 23.96f}},
+	{{0.15f, 97.31f, 24.26f}, {0.15f, 97.83f, 21.30f}, {-5.06f, 99.97f, 23.96f}},
+	{{-6.05f, 98.07f, 24.38f}, {-4.65f, 102.66f, 22.92f}, {-7.88f, 103.20f, 21.96f}},
+	{{0.19f, 97.73f, 21.45f}, {-6.89f, 104.56f, 20.96f}, {-5.02f, 99.87f, 24.11f}},
+	{{6.89f, 104.56f, 20.96f}, {-0.19f, 97.73f, 21.45f}, {5.02f, 99.87f, 24.11f}},
+	{{-17.75f, 103.55f, 16.19f}, {-13.89f, 101.72f, 20.52f}, {-15.86f, 106.65f, 16.94f}},
+	{{6.03f, 97.75f, 24.35f}, {0.06f, 97.79f, 25.65f}, {5.25f, 93.67f, 21.56f}},
+	{{15.83f, 106.63f, 16.98f}, {12.84f, 104.93f, 19.67f}, {17.72f, 103.53f, 16.22f}},
+};
+void moustacheCover(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.6f, 0.8f));
+	const Rgb skin = {255, 186, 146};
+	for (size_t i = 0; i < sizeof kMoustache / sizeof kMoustache[0]; i++)
+		m.tri(v(kMoustache[i][0][0], kMoustache[i][0][1], kMoustache[i][0][2]),
+		      v(kMoustache[i][1][0], kMoustache[i][1][1], kMoustache[i][1][2]),
+		      v(kMoustache[i][2][0], kMoustache[i][2][1], kMoustache[i][2][2]), skin);
 	intoFrame(m, kMarioHead);
 }
 // FLUDD wrapped as a present: a gold ribbon round its tank and along its back, a bow where they cross, and a
@@ -613,7 +699,8 @@ struct ChristmasAdditions : sms::Mod {
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
-	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, fluddDeco = 0;
+	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, sTache = 0, sNoTache = 0, fluddDeco = 0;
+	bool capOff = false; // his own cap left out
 	bool santaOn = false, fluddOn = false; // tints put on
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
@@ -961,6 +1048,14 @@ struct ChristmasAdditions : sms::Mod {
 			// the body's materials are _mat_head, _mat_head(2)..(8) (one picture for all): (2) the overalls'
 			// bib, _mat_head the shirt and trousers, (3) and (4) the shoes, (5) and (6) the gloves, (7) the
 			// cap, (8) the face. A tint holds for every name holding the one given, so all first, then back.
+			// his own cap off under the Santa hat: the cap model (and the hair shown without it) and the
+			// cap in his body's model (_mat_head(7))
+			if (suit != capOff && partsHave(offsetof(SmsPartsApi, hide) + sizeof(void*))
+			    && SMS_API_HAS(&api(), player) && player().set_hidden_parts) {
+				player().set_hidden_parts(suit ? SMS_PLAYER_PART_CAP : 0);
+				parts->hide(mario, "_mat_head(7)", suit ? 1 : 0);
+				capOff = suit;
+			}
 			if (suit) {
 				parts->tint(mario, "_mat_head", 0xB8121CF0u);
 				parts->tint(mario, "_mat_head(", 0);
@@ -984,8 +1079,13 @@ struct ChristmasAdditions : sms::Mod {
 		if (mario && suit) {
 			if (!firstPerson()) {
 				drawOn(mario, "jnt_head", sHat);
-				if (config().get_int(handle(), "santa_beard", 0))
+				if (config().get_int(handle(), "santa_beard", 0)) {
 					drawOn(mario, "jnt_head", sBeard);
+					if (config().get_int(handle(), "santa_no_moustache", 0))
+						drawOn(mario, "jnt_head", sNoTache);
+					else
+						drawOn(mario, "jnt_head", sTache);
+				}
 			}
 			drawOn(mario, "jnt_waist", sBelt);
 			drawOn(mario, "jnt_arm_R2", sCuffR);
@@ -1107,6 +1207,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("rudolph_nose_snow", "A little snow on Rudolph's nose", false);
 		optionBool("santa_mario", "Mario dressed as Santa", true);
 		optionBool("santa_beard", "A white beard on Santa Mario", false);
+		optionBool("santa_no_moustache", "No moustache with Santa's beard", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
@@ -1150,6 +1251,8 @@ struct ChristmasAdditions : sms::Mod {
 		sLegR    = make(santaLegCuffR);
 		sLegL    = make(santaLegCuffL);
 		sBeard   = make(santaBeard);
+		sTache   = make(santaMoustache);
+		sNoTache = make(moustacheCover);
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);

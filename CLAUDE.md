@@ -21,5 +21,7 @@ Next, in order:
   belt, sleeve and trouser fur on jnt_head, jnt_waist, jnt_arm_R2/L2, jnt_leg_R2/L2 (rest frames in the
   source), a beard option (Off). FLUDD (wg_mdl1, on jnt_G_main): _mat_G_main red, froater(2) (the pump) green,
   froater(3) (handles) gold; the tank (_mat_G_main_tank, a drum along x -3..33 round y -40) wrapped in a gold
-  ribbon with a bow and holly on its back (-y). The nozzles are models of their own, untouched.
+  ribbon with a bow and holly on its back (-y). The nozzles are models of their own, untouched. 1.3.1: his cap
+  off under the Santa hat (player SMS_PLAYER_PART_CAP and parts->hide of _mat_head(7), game 251a788), and a
+  no-moustache option (skin-coloured copy of the moustache triangles, with the beard).
 - **FLUDD shoots fast snowballs** in place of water, as a mod.
