@@ -318,6 +318,189 @@ void rudolphNoseSnow(Mesh& m)
 	intoHead(m);
 }
 
+// ---------------------------------------------------------------- Santa Mario and Christmas FLUDD
+// Made in the models' own rest poses (mario.szs: bmd/ma_mdl1.bmd, Mario standing with his arms out, feet at
+// 0, x his left, y up, z forward; watergun2/body/wg_mdl1.bmd, FLUDD), then carried into the frame of the
+// joint each hangs on, as the game poses it. A joint's rest frame: where it is, and its x, y, z axes.
+struct RestFrame {
+	V at, x, y, z;
+};
+const RestFrame kMarioHead  = {{0, 97, -3.004f}, {-0.0001f, 0.0002f, 1}, {0, -1, 0.0002f}, {1, 0, 0.0001f}};
+const RestFrame kMarioWaist = {{0, 58, 0}, {0.0001f, -1, 0}, {0.0001f, 0, -1}, {1, 0.0001f, 0.0001f}};
+const RestFrame kMarioArmR  = {{-29.425f, 80.107f, -5.553f}, {-0.9675f, 0, 0.253f}, {-0.253f, 0.0002f, -0.9675f}, {0, -1, -0.0002f}};
+const RestFrame kMarioArmL  = {{29.426f, 80.107f, -5.548f}, {0.9675f, 0.0001f, 0.253f}, {0.253f, 0.0001f, -0.9675f}, {-0.0001f, 1, 0.0001f}};
+const RestFrame kMarioLegR  = {{-11.277f, 29.19f, -1.52f}, {0.0001f, -0.9973f, -0.0733f}, {0.0001f, 0.0733f, -0.9973f}, {1, 0.0001f, 0.0001f}};
+const RestFrame kMarioLegL  = {{11.283f, 29.192f, -1.518f}, {0.0001f, -0.9973f, -0.0733f}, {0.0001f, 0.0733f, -0.9973f}, {1, 0.0001f, 0.0001f}};
+const RestFrame kFluddMain  = {{0, 0, 0}, {0.0002f, -1, 0}, {1, 0.0002f, -0.0001f}, {0.0001f, 0, 1}};
+void intoFrame(Mesh& m, const RestFrame& f)
+{
+	for (size_t i = 0; i < m.corners.size(); i++) {
+		V rel = sub(v(m.corners[i].x, m.corners[i].y, m.corners[i].z), f.at);
+		m.corners[i].x = dot(rel, f.x), m.corners[i].y = dot(rel, f.y), m.corners[i].z = dot(rel, f.z);
+	}
+}
+const Rgb kSanta = {196, 22, 32}, kFur = {248, 248, 250}, kBelt = {26, 24, 28}, kGold = {232, 184, 60},
+          kHolly = {30, 120, 52};
+// a closed ring of points (an ellipse round y): side half-width a, front z0 + b, back z0 - b2, at height y,
+// the front `lift` higher than the back
+void ringTube(Mesh& m, float y, float a, float z0, float b, float b2, float lift, float r, Rgb col, int seg = 32)
+{
+	std::vector<V> c;
+	std::vector<float> rr;
+	for (int i = 0; i <= seg; i++) {
+		float t = 2 * kPi * i / seg, co = cosf(t);
+		c.push_back(v(a * sinf(t), y + lift * co, z0 + (co > 0 ? b : b2) * co));
+		rr.push_back(r);
+	}
+	m.tube(c, rr, col, 10, false);
+}
+// Santa's hat over Mario's cap: a fur brim round it (the cap's peak still shows under it in front), a soft
+// red cone flopping back, a fur pom-pom at its end
+void santaHatMario(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	ringTube(m, 119, 30.5f, -5.5f, 30, 30, 8, 5.5f, kFur, 40);
+	std::vector<V> c;
+	std::vector<float> r;
+	const int n = 14;
+	for (int i = 0; i <= n; i++) {
+		float t = (float)i / n;
+		c.push_back(v(6 * t * t, 121 + 46 * t - 20 * t * t, -5 - 8 * t - 36 * t * t));
+		r.push_back(31 * (1 - t) * (1 - 0.25f * t) + 4 * t);
+	}
+	m.tube(c, r, kSanta, 22);
+	m.sphere(c.back(), 8.5f, kFur, 14, 9);
+	intoFrame(m, kMarioHead);
+}
+// a black belt with a gold buckle round his waist
+void santaBelt(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	const int seg = 36;
+	std::vector<V> lo, hi;
+	for (int i = 0; i <= seg; i++) {
+		float t = 2 * kPi * i / seg, co = cosf(t);
+		float a = 30.0f, z = 2 + (co > 0 ? 24 : 26.5f) * co; // a little outside the shirt all round
+		lo.push_back(v(a * sinf(t), 54.5f, z));
+		hi.push_back(v(a * sinf(t) * 1.01f, 61.5f, 2 + (z - 2) * 1.01f));
+	}
+	for (int i = 0; i < seg; i++)
+		m.quad(lo[i], lo[i + 1], hi[i + 1], hi[i], kBelt);
+	m.cylinder(v(0, 58, 25.2f), v(0, 58, 27.6f), 6, 6, kGold, 4);  // the buckle, square
+	m.cylinder(v(0, 58, 27.5f), v(0, 58, 27.9f), 3.2f, 3.2f, kBelt, 4);
+	intoFrame(m, kMarioWaist);
+}
+// white fur round each sleeve's end (the glove starts at 40 out) and each trouser leg's, over the shoe
+void santaCuffR(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 28; i++) {
+		float t = 2 * kPi * i / 28;
+		c.push_back(v(-37.5f, 80 + 9.6f * sinf(t), -3.3f + 9.6f * cosf(t)));
+		r.push_back(3.4f);
+	}
+	m.tube(c, r, kFur, 10, false);
+	intoFrame(m, kMarioArmR);
+}
+void santaCuffL(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 28; i++) {
+		float t = 2 * kPi * i / 28;
+		c.push_back(v(37.5f, 80 + 9.6f * sinf(t), -3.3f + 9.6f * cosf(t)));
+		r.push_back(3.4f);
+	}
+	m.tube(c, r, kFur, 10, false);
+	intoFrame(m, kMarioArmL);
+}
+void santaLegCuff(Mesh& m, float side, const RestFrame& f)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 28; i++) {
+		float t = 2 * kPi * i / 28;
+		c.push_back(v(side * 11.2f + 12.2f * sinf(t), 20.5f, 0.6f + 12.6f * cosf(t)));
+		r.push_back(3.8f);
+	}
+	m.tube(c, r, kFur, 10, false);
+	intoFrame(m, f);
+}
+void santaLegCuffR(Mesh& m) { santaLegCuff(m, -1, kMarioLegR); }
+void santaLegCuffL(Mesh& m) { santaLegCuff(m, 1, kMarioLegL); }
+// Santa's beard (the "santa_beard" option, Off): fluffy white round his chin and jaw, a white moustache over
+// his own
+void santaBeard(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	// rows of soft lumps round his jaw and chin, fuller and longer at the front
+	for (int row = 0; row < 4; row++) {
+		float y = 92 - row * 5.5f, reach = 1.0f - row * 0.12f;
+		for (int i = -6; i <= 6; i++) {
+			float a = i * 0.24f * reach;
+			m.sphere(v(18.5f * sinf(a) * reach, y - 2.5f * cosf(a) - row * 2.0f * cosf(a), 8 + 16 * cosf(a)), 7 - row * 0.5f,
+			         kFur, 10, 7);
+		}
+	}
+	m.sphere(v(0, 74, 18), 9, kFur, 12, 8); // its point
+	m.sphere(v(-8, 96.5f, 31), 6.2f, kFur, 10, 7); // the moustache, over his own
+	m.sphere(v(8, 96.5f, 31), 6.2f, kFur, 10, 7);
+	m.sphere(v(-15, 95, 27), 5, kFur, 10, 7);
+	m.sphere(v(15, 95, 27), 5, kFur, 10, 7);
+	intoFrame(m, kMarioHead);
+}
+// FLUDD wrapped as a present: a gold ribbon round its tank and along its back, a bow where they cross, and a
+// sprig of holly beside it. The tank is a drum along FLUDD's x (from -3 to 33), round y -40, z 0, 19 across;
+// its back faces -y (away from Mario)
+void fluddRibbon(Mesh& m)
+{
+	m.light = norm(v(0.3f, -0.8f, 0.4f));
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 32; i++) { // round the tank
+		float t = 2 * kPi * i / 32;
+		c.push_back(v(15, -40 + 20.3f * cosf(t), 20.3f * sinf(t)));
+		r.push_back(1.9f);
+	}
+	m.tube(c, r, kGold, 8, false);
+	{ // along its back, following the tank's shape (its radius along x, measured on the model)
+		const float px[] = {-2.5f, 3, 8, 12, 15, 18, 22, 25, 27, 29.5f, 32.5f};
+		const float pr[] = {10.5f, 16.4f, 18.2f, 18.9f, 18.9f, 18.6f, 17.3f, 15, 13.3f, 15.8f, 15.4f};
+		std::vector<V> line;
+		std::vector<float> lr;
+		for (int i = 0; i < 11; i++) {
+			line.push_back(v(px[i], -40 - pr[i] - 1.3f, 0));
+			lr.push_back(1.9f);
+		}
+		m.tube(line, lr, kGold, 8);
+	}
+	// the bow: two loops and two tails, from the crossing
+	V knot = v(15, -61.2f, 0);
+	for (int s = -1; s <= 1; s += 2) {
+		std::vector<V> loop;
+		std::vector<float> lr;
+		for (int i = 0; i <= 12; i++) {
+			float t = 2 * kPi * i / 12;
+			loop.push_back(add(knot, v(4.5f * sinf(t), -3.5f - 3.5f * (1 - cosf(t)) * 0.5f, s * (6 + 6 * (1 - cosf(t)) * 0.5f))));
+			lr.push_back(2.3f);
+		}
+		m.tube(loop, lr, kSanta, 8, false);
+		m.cylinder(knot, add(knot, v(-11, -1.5f, s * 5)), 2.2f, 1.4f, kSanta, 6);
+	}
+	m.sphere(knot, 3.4f, kSanta, 10, 7);
+	// holly: two leaves and three berries, beside the bow
+	V h = v(23, -58.5f, 5);
+	for (int s = -1; s <= 1; s += 2)
+		m.cylinder(h, add(h, v(5, -1.5f, s * 6)), 2.6f, 0.4f, kHolly, 6);
+	for (int k = 0; k < 3; k++)
+		m.sphere(add(h, v(-1 + 1.8f * k, -1.8f, (k - 1) * 1.6f)), 1.5f, Rgb{214, 20, 30}, 8, 6);
+	intoFrame(m, kFluddMain);
+}
+
 // Names as the game keeps them (Shift JIS)
 const char kDango[] = "\x82\xbe\x82\xf1\x82\xb2\x83\x6e\x83\x80\x83\x4e\x83\x8a"; // だんごハムクリ
 const char kMonte[] = "\x83\x82\x83\x93\x83\x65";                                 // モンテ (a Pianta)
@@ -430,6 +613,8 @@ struct ChristmasAdditions : sms::Mod {
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
+	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, fluddDeco = 0;
+	bool santaOn = false, fluddOn = false; // tints put on
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
@@ -744,6 +929,74 @@ struct ChristmasAdditions : sms::Mod {
 		}
 	}
 
+	// a first-person mod's camera is on: Mario's head is left out, so his hat and beard are too
+	bool firstPerson()
+	{
+		if (!SMS_API_HAS(&api(), held_fludd) || api().held_fludd->magic != SMS_HELD_FLUDD_MAGIC
+		    || !SMS_API_HAS(api().held_fludd, get_state))
+			return false;
+		SmsHeldFluddState st;
+		memset(&st, 0, sizeof st);
+		st.size = sizeof st;
+		return api().held_fludd->get_state(&st) && st.first_person;
+	}
+	void drawOn(SmsObject who, const char* joint, SmsMesh mesh)
+	{
+		float m[3][4];
+		if (mesh && parts->joint(who, joint, m))
+			draw(mesh, m);
+	}
+
+	// Santa Mario: his clothes Santa red, his shoes black boots, a Santa hat, a belt, fur cuffs (and a beard)
+	// Christmas FLUDD: red and green, with gold handles, wrapped in a gold ribbon with a bow and holly
+	void santa()
+	{
+		if (!partsHave(offsetof(SmsPartsApi, yoshi_color) + sizeof(void*)))
+			return;
+		const bool suit = config().get_int(handle(), "santa_mario", 1) != 0;
+		const bool xf   = config().get_int(handle(), "christmas_fludd", 1) != 0;
+		SmsObject mario = parts->player_part(SMS_PARTS_MARIO);
+		SmsObject fludd = parts->player_part(SMS_PARTS_FLUDD);
+		if (mario && (suit || santaOn)) {
+			// the body's materials are _mat_head, _mat_head(2)..(8) (one picture for all): (2) the overalls'
+			// bib, _mat_head the shirt and trousers, (3) and (4) the shoes, (5) and (6) the gloves, (7) the
+			// cap, (8) the face. A tint holds for every name holding the one given, so all first, then back.
+			if (suit) {
+				parts->tint(mario, "_mat_head", 0xB8121CF0u);
+				parts->tint(mario, "_mat_head(", 0);
+				parts->tint(mario, "_mat_head(2)", 0xB8121CF0u);
+				parts->tint(mario, "_mat_head(3)", 0x1C1A1EE6u);
+				parts->tint(mario, "_mat_head(4)", 0x1C1A1EE6u);
+			} else
+				parts->tint(mario, "", 0);
+			santaOn = suit;
+		}
+		if (fludd && (xf || fluddOn)) {
+			if (xf) {
+				parts->tint(fludd, "_mat_G_main", 0xC0182AE8u);
+				parts->tint(fludd, "_mat_G_main_tank", 0);
+				parts->tint(fludd, "_mat_froater(2)", 0x1C8A3CE8u);
+				parts->tint(fludd, "_mat_froater(3)", 0xE0B03CA0u);
+			} else
+				parts->tint(fludd, "", 0);
+			fluddOn = xf;
+		}
+		if (mario && suit) {
+			if (!firstPerson()) {
+				drawOn(mario, "jnt_head", sHat);
+				if (config().get_int(handle(), "santa_beard", 0))
+					drawOn(mario, "jnt_head", sBeard);
+			}
+			drawOn(mario, "jnt_waist", sBelt);
+			drawOn(mario, "jnt_arm_R2", sCuffR);
+			drawOn(mario, "jnt_arm_L2", sCuffL);
+			drawOn(mario, "jnt_leg_R2", sLegR);
+			drawOn(mario, "jnt_leg_L2", sLegL);
+		}
+		if (fludd && xf)
+			drawOn(fludd, "jnt_G_main", fluddDeco);
+	}
+
 	void tick()
 	{
 		{
@@ -752,6 +1005,7 @@ struct ChristmasAdditions : sms::Mod {
 			cam.size = sizeof cam;
 			bool camOk = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
 			rudolph(camOk ? &cam : nullptr);
+			santa();
 		}
 		const bool hats = config().get_int(handle(), "santa_hats", 1) != 0;
 		const bool clothes = config().get_int(handle(), "winter_clothes", 1) != 0;
@@ -851,6 +1105,9 @@ struct ChristmasAdditions : sms::Mod {
 		optionChoice("snowfall", "Falling snow", {"Off", "In snowy levels", "Everywhere"}, 1);
 		optionBool("rudolph", "Yoshi is Rudolph the red-nosed reindeer", true);
 		optionBool("rudolph_nose_snow", "A little snow on Rudolph's nose", false);
+		optionBool("santa_mario", "Mario dressed as Santa", true);
+		optionBool("santa_beard", "A white beard on Santa Mario", false);
+		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
@@ -886,6 +1143,14 @@ struct ChristmasAdditions : sms::Mod {
 		antlers = make(rudolphAntlers);
 		nose    = make(rudolphNose);
 		noseSnow = make(rudolphNoseSnow);
+		sHat     = make(santaHatMario);
+		sBelt    = make(santaBelt);
+		sCuffR   = make(santaCuffR);
+		sCuffL   = make(santaCuffL);
+		sLegR    = make(santaLegCuffR);
+		sLegL    = make(santaLegCuffL);
+		sBeard   = make(santaBeard);
+		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
 		buttons = make(snowmanButtons);
@@ -893,7 +1158,7 @@ struct ChristmasAdditions : sms::Mod {
 
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(); }); // the tints went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
-		info("loaded: Santa hats, winter clothes, snowmen and Rudolph");
+		info("loaded: Santa hats, winter clothes, snowmen, Rudolph, Santa Mario and Christmas FLUDD");
 		return 0;
 	}
 };
