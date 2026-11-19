@@ -402,28 +402,51 @@ void santaHatMario(Mesh& m) { costumeHat(m, kSanta, false); }
 // The elf's: the same hat in green, a bell at its end
 const Rgb kElf = {30, 130, 56};
 void elfHatMario(Mesh& m) { costumeHat(m, kElf, true); }
-// Pointed elf ears over his own (his ears stand out from 22 to 31 at 98 to 117 high, round x 28, z -7): a
-// skin-coloured leaf from each, up and back to a point just outside the hat's brim
+// Pointed elf ears over his own (his ears stand out from 22 to 31 at 98 to 117 high, round x 28, z -7): each a
+// flat leaf of skin, rounded at its foot and long to a point up, out and back past the hat's brim, cupped on
+// its front with a rim round its edge, thin, and the hollow a little darker
+void elfEar(Mesh& m, float side)
+{
+	const V base = v(side * 24.5f, 106, -5.5f);
+	const V L = norm(v(side * 0.62f, 0.7f, -0.36f));   // along it, to its point
+	V N = norm(v(side * 0.45f, 0.05f, 1));              // the way its front faces: forward and out
+	N = norm(sub(N, mul(L, dot(N, L))));
+	const V W = cross(N, L);                            // across it
+	const float len = 25, wide = 7.5f, thick = 1.6f, cup = 2.2f;
+	const Rgb skin = {248, 172, 134}, hollow = {228, 140, 116};
+	const int nt = 14, ns = 10;
+	auto point = [&](float t, float s, int face) {
+		// its outline: a rounded foot, widest a quarter along, then a long curve in to the point
+		float w = wide * (t < 0.25f ? 0.7f + 0.3f * sinf(t / 0.25f * kPi / 2) : powf(1 - (t - 0.25f) / 0.75f, 1.25f));
+		float edge = 1 - s * s;                          // 0 at its edge, 1 down its middle
+		float depth = face ? thick * 0.5f * sqrtf(edge) : -thick * 0.5f * sqrtf(edge);
+		float dish  = face ? -cup * edge * sinf(kPi * (0.08f + 0.84f * t)) : 0.0f; // the front cupped in
+		float bend  = 2.5f * t * t;                      // its point curling back a little
+		return add(add(add(base, mul(L, len * t)), mul(W, w * s)), mul(N, depth + dish - bend));
+	};
+	for (int face = 0; face < 2; face++)
+		for (int i = 0; i < nt; i++)
+			for (int k = 0; k < ns; k++) {
+				float t0 = (float)i / nt, t1 = (float)(i + 1) / nt, s0 = -1 + 2.0f * k / ns, s1 = -1 + 2.0f * (k + 1) / ns;
+				V a = point(t0, s0, face), b = point(t0, s1, face), c = point(t1, s1, face), d = point(t1, s0, face);
+				bool inHollow = face == 1 && fabsf((s0 + s1) / 2) < 0.55f && t0 > 0.1f && t1 < 0.85f;
+				Rgb col = inHollow ? hollow : skin;
+				// both faces outward: the front toward N, the back away from it
+				bool flip = face == 0;
+				if (flip)
+					m.quad(a, b, c, d, col);
+				else
+					m.quad(a, d, c, b, col);
+			}
+}
 void elfEars(Mesh& m)
 {
 	m.light = norm(v(0.2f, 0.9f, 0.4f));
-	const Rgb skin = {248, 172, 134}, inner = {226, 132, 112};
-	for (int s = -1; s <= 1; s += 2) {
-		std::vector<V> c;
-		std::vector<float> r;
-		for (int i = 0; i <= 10; i++) {
-			float t = i / 10.0f;
-			c.push_back(v(s * (26.5f + 15 * t), 106 + 18 * t + 3 * t * t, -6 - 6 * t));
-			r.push_back(7.2f * (1 - t) * (1 - 0.4f * t) + 0.5f * t);
-		}
-		m.tube(c, r, skin, 12);
-		// its hollow: a darker strip down its front
-		for (size_t i = 0; i + 1 < c.size() - 2; i++)
-			m.cylinder(add(c[i], v(0, 0, r[i] * 0.55f)), add(c[i + 1], v(0, 0, r[i + 1] * 0.55f)), r[i] * 0.4f,
-			           r[i + 1] * 0.4f, inner, 8);
-	}
+	elfEar(m, 1);
+	elfEar(m, -1);
 	intoFrame(m, kMarioHead);
 }
+
 // a black belt with a gold buckle round his waist
 void santaBelt(Mesh& m)
 {
@@ -525,8 +548,8 @@ float faceRadius(float th, float y)
 	float lo = kFaceR[a0][h0] * (1 - fa) + kFaceR[a1][h0] * fa, hi = kFaceR[a0][h1] * (1 - fa) + kFaceR[a1][h1] * fa;
 	return lo * (1 - fh) + hi * fh;
 }
-// A smiling mouth for him without his moustache (it hid where his mouth would be): open a little, dark red
-// inside, a tongue at its bottom, lying on his face under his nose (a grid over the crescent, each point
+// A mouth for him without his moustache (it hid where his mouth would be): closed in a gentle smile,
+// lying on his face under his nose (a grid over the crescent, each point
 // carried out to his face's surface)
 V onFace(float x, float y, float out)
 {
@@ -554,8 +577,10 @@ void crescent(Mesh& m, float w, float yTop, float sag, float lift, float yBottom
 void marioMouth(Mesh& m)
 {
 	m.light = norm(v(0, 0.3f, 1));
-	crescent(m, 8.5f, 91.5f, 1.2f, 1.6f, 4.2f, 0.45f, Rgb{96, 18, 26});  // the open mouth
-	crescent(m, 4.5f, 88.6f, 0.2f, 0.0f, 1.5f, 0.6f, Rgb{226, 96, 108}); // the tongue
+	// closed, a soft smile: a thin line of the lips meeting, its corners a little up, and the lower lip's
+	// pink just under it, higher on his face (under his nose, not at his chin)
+	crescent(m, 6.8f, 93.4f, 0.7f, 0.9f, 1.0f, 0.45f, Rgb{132, 52, 50});
+	crescent(m, 4.6f, 92.3f, 0.45f, 0.2f, 1.2f, 0.42f, Rgb{232, 140, 126});
 	intoFrame(m, kMarioHead);
 }
 
