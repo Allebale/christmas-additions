@@ -534,10 +534,10 @@ V beardPoint(float u, float vv, float outer)
 	float len  = 10 + 22 * powf(front, 1.4f);          // longer in front, short by his ears
 	float y    = top - vv * len;
 	float lock = 1.0f * sinf(u * 26) * (0.35f + vv) + 0.7f * sinf(u * 11 + vv * 7) + 0.5f * sinf(vv * 13 + u * 5);
-	float thick = outer * (3.8f + 3.6f * sinf(kPi * (0.15f + 0.85f * vv)) + lock * 0.6f);
-	float r    = faceRadius(th, y) + 0.8f + (thick > 0 ? thick : 0.0f);
-	r *= 1 - 0.35f * vv * vv * vv * front;             // gathering to a rounded point in front
-	return v(r * sinf(th), y, 3 + r * co + 4 * vv * vv * front); // the point a little forward, off his chest
+	float thick = outer * (2.6f + 2.6f * sinf(kPi * (0.15f + 0.85f * vv)) + lock * 0.5f);
+	thick *= 1 - 0.5f * vv * vv * vv * front;          // thinning to a rounded point in front
+	float r    = faceRadius(th, y) - 0.3f + (thick > 0 ? thick : 0.0f); // its inside just in his skin: no gap
+	return v(r * sinf(th), y, 3 + r * co + 1.5f * vv * vv * front); // the point a hair forward, on his chest
 }
 void santaBeard(Mesh& m)
 {
