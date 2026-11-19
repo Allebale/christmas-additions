@@ -261,12 +261,12 @@ void antler(Mesh& m, float s)
 }
 void ear(Mesh& m, float s)
 {
-	// a leaf-shaped ear out from the side of his head, below the antler
+	// a leaf-shaped ear out from the side of his head, below the antler (the head is about 20 wide there)
 	std::vector<V> c;
 	std::vector<float> r;
 	for (int i = 0; i <= 5; i++) {
 		float t = i / 5.0f;
-		c.push_back(v(s * (20 + 20 * t), 150 + 4 * t, -8 - 4 * t));
+		c.push_back(v(s * (16 + 19 * t), 148 + 5 * t, 1 - 7 * t)); // its root sunk into the side of his head
 		r.push_back(6.5f * sinf(kPi * (0.15f + 0.85f * t)) + 0.6f);
 	}
 	m.tube(c, r, kEar, 10);
