@@ -7,6 +7,10 @@
 //   under it have coal buttons, the one under the head twig arms. A ball knocked off the top
 //   leaves the next one down as the head.
 //
+// - Snow: in a level with an object named "Snowy ground", Mario's steps on open ground leave white
+//   footprints (pressed snow) that fade, and running and landing kick up puffs of snow; where one is
+//   named "Snowfall" (or everywhere, by choice) snow falls round the camera, out of doors. A level
+//   gives its snow the Snow ground type (the world editor's), so the game leaves no sand prints.
 // - Back through a level's door: leaving a stage by its own way out (a stage exit) and coming back,
 //   Mario starts beside the exit that leads where he came from, not at the stage's start. A level
 //   names its exits "Exit to <area> <episode>" (the world editor's do), so this works for any.
@@ -227,6 +231,67 @@ struct Ball {
 	float radius;
 };
 
+// ---------------------------------------------------------------- snow: prints, puffs and flakes
+
+// Pictures: a shoe print (pressed snow: pale blue-grey, a brighter rim), and soft round dots
+std::vector<uint8_t> printPicture()
+{
+	const int w = 32, h = 64;
+	std::vector<uint8_t> px(w * h * 4);
+	for (int y = 0; y < h; y++)
+		for (int x = 0; x < w; x++) {
+			float u = (x + 0.5f) / w * 2 - 1, vv = (y + 0.5f) / h * 2 - 1; // -1..1, the toe at the top
+			float sole = (u * u) / 0.80f + ((vv + 0.30f) * (vv + 0.30f)) / 0.42f;
+			float heel = (u * u) / 0.55f + ((vv - 0.62f) * (vv - 0.62f)) / 0.09f;
+			float d    = sole < heel ? sole : heel; // under 1 inside
+			uint8_t* p = &px[(y * w + x) * 4];
+			float a    = d < 1 ? (d > 0.78f ? (1 - d) / 0.22f : 1.0f) : 0.0f;
+			bool rim   = d > 0.72f && d < 1;
+			p[0] = rim ? 250 : 178, p[1] = rim ? 252 : 192, p[2] = rim ? 255 : 220;
+			p[3] = (uint8_t)(a * (rim ? 200 : 150));
+		}
+	return px;
+}
+
+std::vector<uint8_t> softDot(int w, float hard)
+{
+	std::vector<uint8_t> px(w * w * 4);
+	for (int y = 0; y < w; y++)
+		for (int x = 0; x < w; x++) {
+			float u = (x + 0.5f) / w * 2 - 1, vv = (y + 0.5f) / w * 2 - 1;
+			float r = sqrtf(u * u + vv * vv), a = r < hard ? 1.0f : (r < 1 ? (1 - r) / (1 - hard) : 0.0f);
+			uint8_t* p = &px[(y * w + x) * 4];
+			p[0] = 255, p[1] = 255, p[2] = 255, p[3] = (uint8_t)(a * a * 255);
+		}
+	return px;
+}
+
+struct Print {
+	V p;
+	float yaw, born;
+};
+struct Puff {
+	V p;
+	float born, size;
+};
+struct Flake {
+	V at; // where it starts in the box round the camera
+	float fall, sway, size, phase;
+};
+
+// a quad, corners a b c d (the picture's 0,0 1,0 1,1 0,1), one colour
+void quad(std::vector<SmsTexCorner>& out, V a, V b, V c, V d, uint8_t r, uint8_t g, uint8_t bl, uint8_t al)
+{
+	const V p[6]         = {a, b, c, a, c, d};
+	const float uv[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+	for (int i = 0; i < 6; i++) {
+		SmsTexCorner k;
+		k.x = p[i].x, k.y = p[i].y, k.z = p[i].z, k.u = uv[i][0], k.v = uv[i][1];
+		k.r = r, k.g = g, k.b = bl, k.a = al;
+		out.push_back(k);
+	}
+}
+
 // ---------------------------------------------------------------- the mod
 
 struct ChristmasAdditions : sms::Mod {
@@ -236,6 +301,199 @@ struct ChristmasAdditions : sms::Mod {
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
+
+	// ---------------------------------------------------------------- snow
+	SmsTexture printTex = 0, puffTex = 0, flakeTex = 0;
+	bool snowyGround = false, snowfall = false; // this stage's markers
+	int markerLooks = 0;                         // looked for them this many times this stage
+	float now = 0;
+	std::vector<Print> prints;
+	std::vector<Puff> puffs;
+	std::vector<Flake> flakes;
+	V last;
+	bool lastValid = false, wasOnGround = true;
+	float stride = 0, lastVy = 0, snowLevel = 0;
+	int side = 1;
+
+	void addPuff(V p, float size)
+	{
+		if (puffs.size() >= 96)
+			puffs.erase(puffs.begin());
+		Puff f = {p, now, size};
+		puffs.push_back(f);
+	}
+
+	// open ground under a point: ordinary floor (not ice, water and the like) with no roof over it
+	bool openGround(const SmsVec3& at, float* floorY)
+	{
+		SmsVec3 probe = at;
+		probe.y += 60;
+		SmsGround g;
+		memset(&g, 0, sizeof g);
+		g.size = sizeof g;
+		if (!game().ground || !game().ground(&probe, &g))
+			return false;
+		if (floorY)
+			*floorY = g.floor;
+		return (g.floor_type & 0x0FFF) == 0 && !g.water && g.roof > at.y + 2500;
+	}
+	bool outdoors(const SmsVec3& at)
+	{
+		SmsVec3 probe = at;
+		probe.y += 60;
+		SmsGround g;
+		memset(&g, 0, sizeof g);
+		g.size = sizeof g;
+		return !game().ground || !game().ground(&probe, &g) || g.roof > at.y + 2500;
+	}
+
+	// Mario's steps on snowy open ground: a print each stride, puffs as he runs and lands
+	void steps(const SmsPlayer& p, float dt)
+	{
+		V at        = v(p.position.x, p.position.y, p.position.z);
+		float moved = lastValid ? sqrtf((at.x - last.x) * (at.x - last.x) + (at.z - last.z) * (at.z - last.z)) : 0;
+		if (moved > 300)
+			moved = 0; // a warp, not a step
+		last = at, lastValid = true;
+		bool landed = p.on_ground && !wasOnGround && lastVy < -8;
+		wasOnGround = p.on_ground != 0;
+		lastVy      = p.velocity.y;
+		float floorY;
+		if (!p.on_ground || p.in_water || p.on_yoshi || !openGround(p.position, &floorY))
+			return;
+		const float yaw = p.yaw * kPi / 180;
+		const V fwd = v(sinf(yaw), 0, cosf(yaw)), right = v(cosf(yaw), 0, -sinf(yaw));
+		const V ground = v(at.x, floorY + 1.5f, at.z);
+		if (landed)
+			for (int i = 0; i < 6; i++) {
+				float a = 2 * kPi * i / 6;
+				addPuff(add(ground, v(cosf(a) * 30, 4, sinf(a) * 30)), 34);
+			}
+		stride += moved;
+		const float speed = dt > 0 ? moved / dt : 0; // units a second
+		if (stride > 62) {
+			stride   = 0;
+			side     = -side;
+			V foot   = add(ground, mul(right, 11.0f * side));
+			Print pr = {foot, yaw, now};
+			if (prints.size() >= 160)
+				prints.erase(prints.begin());
+			prints.push_back(pr);
+			if (speed > 500)
+				addPuff(add(foot, mul(fwd, -12)), 26);
+		}
+	}
+
+	void drawSnow(const SmsCamera& cam)
+	{
+		std::vector<SmsTexCorner> c;
+		// prints: fading out over their last two seconds of fourteen
+		const float life = 14;
+		while (!prints.empty() && now - prints[0].born > life)
+			prints.erase(prints.begin());
+		for (size_t i = 0; i < prints.size(); i++) {
+			const Print& pr = prints[i];
+			float age = (now - pr.born) / life, a = age < 0.85f ? 1.0f : (1 - age) / 0.15f;
+			V f = v(sinf(pr.yaw), 0, cosf(pr.yaw)), r = v(cosf(pr.yaw), 0, -sinf(pr.yaw));
+			V hf = mul(f, 15), hr = mul(r, 8);
+			quad(c, add(sub(pr.p, hr), hf), add(add(pr.p, hr), hf), sub(add(pr.p, hr), hf), sub(sub(pr.p, hr), hf), 255, 255, 255,
+			     (uint8_t)(255 * a));
+		}
+		if (!c.empty())
+			api().models->draw_textured(&c[0], (int)c.size(), printTex, SMS_BLEND_ALPHA);
+		// puffs and flakes face the camera
+		V right = norm(v(cam.view[0][0], cam.view[0][1], cam.view[0][2]));
+		V up    = norm(v(cam.view[1][0], cam.view[1][1], cam.view[1][2]));
+		c.clear();
+		while (!puffs.empty() && now - puffs[0].born > 0.8f)
+			puffs.erase(puffs.begin());
+		for (size_t i = 0; i < puffs.size(); i++) {
+			const Puff& pf = puffs[i];
+			float t = (now - pf.born) / 0.8f, size = pf.size * (0.6f + 1.4f * t);
+			V m = add(pf.p, v(0, 40 * t, 0)), hr = mul(right, size), hu = mul(up, size);
+			quad(c, add(sub(m, hr), hu), add(add(m, hr), hu), sub(add(m, hr), hu), sub(sub(m, hr), hu), 255, 255, 255,
+			     (uint8_t)(200 * (1 - t)));
+		}
+		if (!c.empty())
+			api().models->draw_textured(&c[0], (int)c.size(), puffTex, SMS_BLEND_ALPHA);
+		// flakes: a box of them round the camera, falling and swaying, each wrapping round inside it
+		if (snowLevel <= 0.01f || flakes.empty())
+			return;
+		c.clear();
+		const float W = 3600, H = 2200;
+		V cp = v(cam.position.x, cam.position.y, cam.position.z);
+		for (size_t i = 0; i < flakes.size(); i++) {
+			const Flake& fl = flakes[i];
+			V p = v(fl.at.x + 40 * now + sinf(now * 0.9f + fl.phase) * fl.sway, fl.at.y - fl.fall * now, fl.at.z + 18 * now);
+			p.x  = cp.x + fmodf(fmodf(p.x - cp.x, W) + W * 1.5f, W) - W / 2;
+			p.y  = cp.y + fmodf(fmodf(p.y - cp.y, H) + H * 1.5f, H) - H / 2;
+			p.z  = cp.z + fmodf(fmodf(p.z - cp.z, W) + W * 1.5f, W) - W / 2;
+			V hr = mul(right, fl.size), hu = mul(up, fl.size);
+			quad(c, add(sub(p, hr), hu), add(add(p, hr), hu), sub(add(p, hr), hu), sub(sub(p, hr), hu), 255, 255, 255,
+			     (uint8_t)(235 * snowLevel));
+		}
+		api().models->draw_textured(&c[0], (int)c.size(), flakeTex, SMS_BLEND_ALPHA);
+	}
+
+	void lookForMarkers()
+	{
+		if (markerLooks > 8 || !game().find_object)
+			return;
+		markerLooks++;
+		snowyGround = game().find_object("Snowy ground") != nullptr;
+		snowfall    = game().find_object("Snowfall") != nullptr;
+		if (snowyGround || snowfall)
+			markerLooks = 99; // found: done for this stage
+	}
+
+	void snow(float dt)
+	{
+		now += dt;
+		lookForMarkers();
+		const bool stepsOn = config().get_int(handle(), "snow_steps", 1) != 0;
+		const int fall     = config().get_int(handle(), "snowfall", 1); // 0 off, 1 snowy levels, 2 everywhere
+		SmsPlayer p;
+		memset(&p, 0, sizeof p);
+		p.size = sizeof p;
+		if (!player().get || !player().get(&p) || !p.valid)
+			return;
+		if (stepsOn && snowyGround)
+			steps(p, dt);
+		// snow falls out of doors: thinning away under a roof, over a second
+		bool want = (fall == 2 || (fall == 1 && snowfall)) && outdoors(p.position);
+		snowLevel += want ? dt : -dt;
+		snowLevel = snowLevel < 0 ? 0 : (snowLevel > 1 ? 1 : snowLevel);
+		if (prints.empty() && puffs.empty() && snowLevel <= 0)
+			return;
+		SmsCamera cam;
+		memset(&cam, 0, sizeof cam);
+		cam.size = sizeof cam;
+		if (!SMS_API_HAS(&api(), camera) || !api().camera->get(&cam) || !cam.valid)
+			return;
+		drawSnow(cam);
+	}
+
+	void makeSnow()
+	{
+		std::vector<uint8_t> px = printPicture();
+		printTex                = api().models->texture_create(handle(), &px[0], 32, 64);
+		px                      = softDot(32, 0.15f);
+		puffTex                 = api().models->texture_create(handle(), &px[0], 32, 32);
+		px                      = softDot(16, 0.45f);
+		flakeTex                = api().models->texture_create(handle(), &px[0], 16, 16);
+		unsigned seed           = 12345;
+		for (int i = 0; i < 1100; i++) {
+			Flake f;
+			seed = seed * 1103515245u + 12345u, f.at.x = (seed >> 8) % 3600;
+			seed = seed * 1103515245u + 12345u, f.at.y = (seed >> 8) % 2200;
+			seed = seed * 1103515245u + 12345u, f.at.z = (seed >> 8) % 3600;
+			seed = seed * 1103515245u + 12345u, f.fall = 110 + (seed >> 8) % 70;
+			seed = seed * 1103515245u + 12345u, f.sway = 10 + (seed >> 8) % 30;
+			seed = seed * 1103515245u + 12345u, f.size = 3.5f + ((seed >> 8) % 40) / 10.0f;
+			seed = seed * 1103515245u + 12345u, f.phase = ((seed >> 8) % 628) / 100.0f;
+			flakes.push_back(f);
+		}
+	}
 
 	// Mario starting where he came back to: beside the exit that leads to the stage he left, facing
 	// the way it faces, a little in front of it (so he isn't sent straight back)
@@ -407,7 +665,18 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("winter_clothes", "Winter colours on Piantas' clothes", true);
 		optionBool("snowmen", "Strollin' Stu stacks are snowmen", true);
 		optionBool("exit_return", "Back through a level's door, start beside it", true);
+		optionBool("snow_steps", "White footprints and puffs of snow in snowy levels", true);
+		optionChoice("snowfall", "Falling snow", {"Off", "In snowy levels", "Everywhere"}, 1);
 
+		// snow: the stage's markers looked for again, its prints and puffs gone with it
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
+			markerLooks = 0, snowyGround = snowfall = false;
+			prints.clear(), puffs.clear(), lastValid = false;
+		});
+		if (SMS_API_HAS(&api(), models)) {
+			makeSnow();
+			on<SmsEvTick>(SMS_EV_TICK, [this](SmsEvTick& t) { snow(t.dt > 0 ? t.dt : 1.0f / 60); });
+		}
 		// a stage left by its own way out (a stage exit): Mario starts beside the exit back to it
 		on<SmsEvStage>(SMS_EV_STAGE_LEAVING, [this](SmsEvStage& st) {
 			SmsGameState g;
