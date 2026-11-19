@@ -79,10 +79,16 @@ struct Mesh {
 	void quad(V a, V b, V c, V d, Rgb col) { tri(a, b, c, col), tri(a, c, d, col); }
 
 	// a ring of `seg` points round `axis` at `c`
-	static void ring(V c, V axis, float r, int seg, std::vector<V>& out)
+	static V sideOf(V axis)
 	{
 		V a = norm(axis);
-		V u = norm(cross(a, fabsf(a.x) < 0.9f ? v(1, 0, 0) : v(0, 1, 0)));
+		return norm(cross(a, fabsf(a.x) < 0.9f ? v(1, 0, 0) : v(0, 1, 0)));
+	}
+	static void ring(V c, V axis, float r, int seg, std::vector<V>& out) { ring(c, axis, sideOf(axis), r, seg, out); }
+	// `u`: a direction across the axis where the ring starts
+	static void ring(V c, V axis, V u, float r, int seg, std::vector<V>& out)
+	{
+		V a = norm(axis);
 		V w = cross(a, u);
 		out.clear();
 		for (int i = 0; i < seg; i++) {
@@ -93,10 +99,22 @@ struct Mesh {
 	// a tube along points `c` with radii `r` (a cone, a bent hat), capped at each end
 	void tube(const std::vector<V>& c, const std::vector<float>& r, Rgb col, int seg = 16, bool caps = true)
 	{
+		// each ring turned on from the one before (not picked afresh), so a bending tube never twists
 		std::vector<std::vector<V> > rings(c.size());
-		for (size_t i = 0; i < c.size(); i++) {
-			V axis = i + 1 < c.size() ? sub(c[i + 1], c[i]) : sub(c[i], c[i - 1]);
-			ring(c[i], axis, r[i], seg, rings[i]);
+		V u = v(1, 0, 0);
+		const size_t n = c.size();
+		V gap = sub(c[n - 1], c[0]);
+		const bool closed = n > 3 && dot(gap, gap) < 1e-4f; // a loop: its last ring is its first, no seam
+		for (size_t i = 0; i < n; i++) {
+			if (closed && i == n - 1) {
+				rings[i] = rings[0];
+				break;
+			}
+			V axis = i + 1 < n ? (i > 0 ? sub(c[i + 1], c[i - 1]) : (closed ? sub(c[1], c[n - 2]) : sub(c[1], c[0])))
+			                   : sub(c[i], c[i - 1]);
+			V a = norm(axis);
+			u = i == 0 ? sideOf(a) : norm(sub(u, mul(a, dot(u, a))));
+			ring(c[i], a, u, r[i], seg, rings[i]);
 		}
 		for (size_t i = 0; i + 1 < c.size(); i++)
 			for (int k = 0; k < seg; k++) {
@@ -487,7 +505,7 @@ void santaMoustache(Mesh& m)
 	}
 	intoFrame(m, kMarioHead);
 }
-// His own moustache, gone while he has the beard: it is a piece of its own in his face (ma_mdl1's position
+// His own moustache, gone with the "no_moustache" option or under the beard: it is a piece of its own in his face (ma_mdl1's position
 // array, these 31 vertices, on his head joint, as the file has them), folded into one point inside his head,
 // and put back after. They are checked first, so a changed model (another character) is left alone.
 struct MoustacheVertex {
@@ -1091,15 +1109,17 @@ struct ChristmasAdditions : sms::Mod {
 				parts->tint(fludd, "", 0);
 			fluddOn = xf;
 		}
+		// his own moustache: gone with "No Mario moustache", and under Santa's beard (a white one over it)
+		const bool noTache = config().get_int(handle(), "no_moustache", 0) != 0;
 		if (mario)
-			shaveMoustache(mario, suit && config().get_int(handle(), "santa_beard", 0) != 0);
+			shaveMoustache(mario, noTache || (suit && config().get_int(handle(), "santa_beard", 0) != 0));
 		if (mario && suit) {
 			if (!firstPerson()) {
 				drawOn(mario, "jnt_head", sHat);
 				if (config().get_int(handle(), "santa_beard", 0)) {
 					// his own moustache goes with the beard (shaveMoustache); a white one unless he is clean shaven
 					drawOn(mario, "jnt_head", sBeard);
-					if (!config().get_int(handle(), "santa_no_moustache", 0))
+					if (!noTache)
 						drawOn(mario, "jnt_head", sTache);
 				}
 			}
@@ -1223,7 +1243,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("rudolph_nose_snow", "A little snow on Rudolph's nose", false);
 		optionBool("santa_mario", "Mario dressed as Santa", true);
 		optionBool("santa_beard", "A white beard on Santa Mario", false);
-		optionBool("santa_no_moustache", "No moustache with Santa's beard", false);
+		optionBool("no_moustache", "No Mario moustache", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
