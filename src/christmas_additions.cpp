@@ -533,7 +533,7 @@ void marioMouth(Mesh& m)
 V beardPoint(float u, float vv, float outer)
 {
 	float th   = u * 1.72f, co = cosf(th), front = co > 0 ? co : 0.0f;
-	float top  = 92.5f + 8.5f * (1 - co);              // under his nose in front, up to his sideburns
+	float top  = 94.0f + 7.0f * (1 - co);              // from the skin under his nose, up to his sideburns
 	float len  = 10 + 22 * powf(front, 1.4f);          // longer in front, short by his ears
 	float y    = top - vv * len;
 	float lock = 1.0f * sinf(u * 26) * (0.35f + vv) + 0.7f * sinf(u * 11 + vv * 7) + 0.5f * sinf(vv * 13 + u * 5);
@@ -564,22 +564,26 @@ void santaBeard(Mesh& m)
 	}
 	intoFrame(m, kMarioHead);
 }
-// a white moustache with the beard: two soft locks from under his nose curling out and down
+// a white moustache with the beard: two soft locks lying on the skin under his nose (from the middle of it,
+// at 95 high, out along his face to the corners of his mouth, curling down there), so it sits under his nose
+// and not out in front of it
 void santaMoustache(Mesh& m)
 {
 	m.light = norm(v(0.2f, 0.7f, 0.7f));
 	for (int s = -1; s <= 1; s += 2) {
 		std::vector<V> c;
 		std::vector<float> r;
-		for (int i = 0; i <= 10; i++) {
-			float t = i / 10.0f;
-			c.push_back(v(s * (1.5f + 17 * t), 95.5f - 1.5f * t - 5 * t * t, 30.5f - 9 * t * t));
-			r.push_back(4.8f * (1 - t) + 1.6f * t);
+		for (int i = 0; i <= 12; i++) {
+			float t = i / 12.0f, rad = 4.2f * (1 - t) + 1.4f * t;
+			float x = s * (1 + 15 * t), y = 95 - 1.0f * t - 6 * t * t * t;
+			c.push_back(onFace(x, y, rad * 0.75f));
+			r.push_back(rad);
 		}
 		m.tube(c, r, kFur, 10);
 	}
 	intoFrame(m, kMarioHead);
 }
+
 // His own moustache, gone with the "no_moustache" option or under the beard: it is a piece of its own in his face (ma_mdl1's position
 // array, these 31 vertices, on his head joint, as the file has them), folded into one point inside his head,
 // and put back after. They are checked first, so a changed model (another character) is left alone.
