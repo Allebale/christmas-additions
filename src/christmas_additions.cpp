@@ -234,7 +234,7 @@ struct ChristmasAdditions : sms::Mod {
 
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
-	std::set<SmsObject> tinted; // Piantas' clothes and snowmen, this stage
+	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
 	// Mario starting where he came back to: beside the exit that leads to the stage he left, facing
@@ -266,8 +266,16 @@ struct ChristmasAdditions : sms::Mod {
 		}
 		const float out = 100.0f * size + 180.0f, a = yaw * kPi / 180.0f;
 		sp.position.x = at.x + sinf(a) * out;
-		sp.position.y = at.y;
 		sp.position.z = at.z + cosf(a) * out;
+		// on the floor there (an exit down a hole sits below it): the floor under a point well above
+		sp.position.y = at.y;
+		SmsVec3 probe = sp.position;
+		probe.y      = at.y + 800.0f;
+		SmsGround g;
+		memset(&g, 0, sizeof g);
+		g.size = sizeof g;
+		if (game().ground && game().ground(&probe, &g) && g.floor > at.y - 200.0f)
+			sp.position.y = g.floor;
 		sp.yaw          = yaw;
 		sp.has_position = 1;
 		info("back beside %s", name);
@@ -292,14 +300,15 @@ struct ChristmasAdditions : sms::Mod {
 			api().models->draw(mesh, SMS_FRAME_WORLD, 0, m);
 	}
 
-	void untintAll()
+	void untint(std::set<SmsObject>& set, bool parts_)
 	{
-		for (std::set<SmsObject>::iterator i = tinted.begin(); i != tinted.end(); ++i) {
-			parts->tint(*i, nullptr, 0);
-			if (game().object_set_tint)
+		for (std::set<SmsObject>::iterator i = set.begin(); i != set.end(); ++i) {
+			if (parts_)
+				parts->tint(*i, nullptr, 0);
+			else if (game().object_set_tint)
 				game().object_set_tint(*i, 0);
 		}
-		tinted.clear();
+		set.clear();
 	}
 
 	void tick()
@@ -307,8 +316,10 @@ struct ChristmasAdditions : sms::Mod {
 		const bool hats = config().get_int(handle(), "santa_hats", 1) != 0;
 		const bool clothes = config().get_int(handle(), "winter_clothes", 1) != 0;
 		const bool snowmen = config().get_int(handle(), "snowmen", 1) != 0;
-		if ((!clothes || !snowmen) && !tinted.empty())
-			untintAll(); // switched off: set again below for what is still on
+		if (!clothes && !dressed.empty())
+			untint(dressed, true); // switched off
+		if (!snowmen && !snowy.empty())
+			untint(snowy, false);
 		SmsPlayer p;
 		memset(&p, 0, sizeof p);
 		p.size = sizeof p;
@@ -327,10 +338,10 @@ struct ChristmasAdditions : sms::Mod {
 					continue;
 				if (hats)
 					draw(hat, m);
-				if (clothes && !tinted.count(o)) {
+				if (clothes && !dressed.count(o)) {
 					unsigned pick = (unsigned)(m[0][3] * 0.37f + m[2][3] * 0.61f);
 					parts->tint(o, "fuku", kWinter[pick % (sizeof kWinter / sizeof kWinter[0])]);
-					tinted.insert(o);
+					dressed.insert(o);
 				}
 			}
 		}
@@ -350,9 +361,9 @@ struct ChristmasAdditions : sms::Mod {
 				b.radius = 60 * sc;
 				b.centre = add(v(b.m[0][3], b.m[1][3], b.m[2][3]), mul(up, kBall.x));
 				balls.push_back(b);
-				if (!tinted.count(b.obj) && game().object_set_tint) {
+				if (!snowy.count(b.obj) && game().object_set_tint) {
 					game().object_set_tint(b.obj, 0xF4F7FFFFu);
-					tinted.insert(b.obj);
+					snowy.insert(b.obj);
 				}
 			}
 			for (size_t i = 0; i < balls.size(); i++) {
@@ -424,7 +435,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { tinted.clear(); }); // the tints went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(); }); // the tints went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		info("loaded: Santa hats, winter clothes and snowmen");
 		return 0;
