@@ -284,7 +284,37 @@ void rudolphNose(Mesh& m)
 {
 	m.light = norm(v(0.2f, 0.9f, 0.4f));
 	m.sphere(kNoseAt, 13, kNose, 16, 10);
-	m.sphere(add(kNoseAt, v(-4, 6, 9)), 3.5f, Rgb{255, 200, 200}, 8, 6); // a shine
+	intoHead(m);
+}
+// A little snow fallen on top of his nose (the "rudolph_nose_snow" option): a thin, lumpy cap over its
+// top, its edge ragged, a touch blue in its hollows, and a few clumps on it
+void rudolphNoseSnow(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	const int seg = 28, rings = 6;
+	const Rgb snow = {246, 248, 255}, shade = {214, 224, 240};
+	std::vector<std::vector<V> > ring(rings + 1);
+	for (int i = 0; i <= rings; i++)
+		for (int k = 0; k < seg; k++) {
+			float az   = 2 * kPi * k / seg;
+			// the edge comes down further at the back and the sides than at the front, and wavers
+			float edge = 0.62f + 0.12f * cosf(az) + 0.07f * sinf(3 * az + 1.3f) + 0.05f * sinf(7 * az);
+			float t    = (float)i / rings;                      // 0 the top, 1 the edge
+			float el   = kPi / 2 - t * (kPi / 2 - edge);        // elevation over the nose's middle
+			float lump = 0.9f + 0.55f * (1 - t) * (0.6f + 0.4f * sinf(5 * az + 2 * i)); // thickest on top
+			float r    = 13.4f + lump * (1 - t * 0.8f);
+			ring[i].push_back(add(kNoseAt, v(r * cosf(el) * sinf(az), r * sinf(el), r * cosf(el) * cosf(az))));
+		}
+	for (int i = 0; i < rings; i++)
+		for (int k = 0; k < seg; k++) {
+			int k2 = (k + 1) % seg;
+			m.quad(ring[i][k], ring[i + 1][k], ring[i + 1][k2], ring[i][k2], i == rings - 1 ? shade : snow);
+		}
+	for (int k = 0; k < 3; k++) { // clumps
+		float az = 0.8f + 2.1f * k, el = 1.15f + 0.12f * k;
+		V at = add(kNoseAt, v(14.2f * cosf(el) * sinf(az), 14.2f * sinf(el), 14.2f * cosf(el) * cosf(az)));
+		m.sphere(at, 1.6f + 0.5f * k, snow, 8, 5);
+	}
 	intoHead(m);
 }
 
@@ -399,7 +429,7 @@ struct ChristmasAdditions : sms::Mod {
 
 	const SmsPartsApi* parts = nullptr;
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
-	SmsMesh antlers = 0, nose = 0;
+	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
@@ -695,6 +725,8 @@ struct ChristmasAdditions : sms::Mod {
 			return;
 		draw(antlers, hm);
 		draw(nose, hm);
+		if (config().get_int(handle(), "rudolph_nose_snow", 0))
+			draw(noseSnow, hm);
 		// the nose's glow, facing the camera, pulsing a little
 		if (cam && puffTex) {
 			V l = restToHead(kNoseAt), at;
@@ -818,6 +850,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("snow_steps", "White footprints and puffs of snow in snowy levels", true);
 		optionChoice("snowfall", "Falling snow", {"Off", "In snowy levels", "Everywhere"}, 1);
 		optionBool("rudolph", "Yoshi is Rudolph the red-nosed reindeer", true);
+		optionBool("rudolph_nose_snow", "A little snow on Rudolph's nose", false);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
@@ -852,6 +885,7 @@ struct ChristmasAdditions : sms::Mod {
 		}
 		antlers = make(rudolphAntlers);
 		nose    = make(rudolphNose);
+		noseSnow = make(rudolphNoseSnow);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
 		buttons = make(snowmanButtons);
