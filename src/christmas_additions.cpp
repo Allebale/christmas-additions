@@ -668,6 +668,26 @@ void fluddRibbon(Mesh& m)
 	intoFrame(m, kFluddMain);
 }
 
+// A snowball, 10 across at size 1 (scaled to each one's drop): lumpy, white, a little blue underneath
+void snowball(Mesh& m)
+{
+	m.light = norm(v(0.3f, 0.9f, 0.3f));
+	const int seg = 12, rings = 8;
+	for (int i = 0; i < rings; i++)
+		for (int k = 0; k < seg; k++) {
+			V p[4];
+			for (int c = 0; c < 4; c++) {
+				int ii = i + (c >= 2), kk = k + (c == 1 || c == 2);
+				float a = kPi * ii / rings - kPi / 2, b = 2 * kPi * kk / seg;
+				float r = 5 + 0.45f * sinf(a * 5 + b * 3) + 0.3f * cosf(b * 5 - a * 2); // lumps
+				if (ii == 0 || ii == rings) r = 5;
+				p[c] = v(r * cosf(a) * cosf(b), r * sinf(a), r * cosf(a) * sinf(b));
+			}
+			Rgb col = i < 2 ? Rgb{214, 224, 240} : Rgb{248, 249, 252};
+			m.quad(p[0], p[1], p[2], p[3], col);
+		}
+}
+
 // Names as the game keeps them (Shift JIS)
 const char kDango[] = "\x82\xbe\x82\xf1\x82\xb2\x83\x6e\x83\x80\x83\x4e\x83\x8a"; // だんごハムクリ
 const char kMonte[] = "\x83\x82\x83\x93\x83\x65";                                 // モンテ (a Pianta)
@@ -781,7 +801,8 @@ struct ChristmasAdditions : sms::Mod {
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
 	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, sTache = 0, fluddDeco = 0;
-	SmsMesh sMouth = 0;
+	SmsMesh sMouth = 0, ball = 0;
+	float lastSnowball[2] = {-9, -9}; // when each player last threw one
 	bool tacheGone = false, tacheLeft = false; // his own moustache folded away; or never touched (not the game's model)
 	bool capOff = false; // his own cap left out
 	bool santaOn = false, fluddOn = false; // tints put on
@@ -1209,6 +1230,73 @@ struct ChristmasAdditions : sms::Mod {
 			drawOn(fludd, "jnt_G_main", fluddDeco);
 	}
 
+	// FLUDD throws snowballs ("snowball_fludd", Off): its spray nozzle's stream is turned down, and a fast
+	// snowball made in its place every so often, from the same place and the same way but faster and
+	// bigger, drawn by the mod (the game's drop unseen under it), bursting into snow where it lands. It
+	// still hits as the game's water does, and uses the tank's water.
+	static const uint32_t kSnowTag = 0x534E0000u; // "SN"
+	bool snowballsOn()
+	{
+		return config().get_int(handle(), "snowball_fludd", 0) != 0 && SMS_API_HAS(&api(), water)
+		       && SMS_API_HAS(&api(), models);
+	}
+	int onWaterEmit(SmsEvWaterEmit& e)
+	{
+		if (!snowballsOn() || e.player < 0 || e.player > 1)
+			return SMS_CONTINUE;
+		SmsPlayer p;
+		memset(&p, 0, sizeof p);
+		p.size = sizeof p;
+		if (!player().get || !player().get(&p) || !p.valid || p.current_nozzle != 0 || p.in_water)
+			return SMS_CONTINUE; // the underwater nozzle, or under water: its own water
+		if (now - lastSnowball[e.player] < 0.16f)
+			return SMS_CANCEL;
+		lastSnowball[e.player] = now;
+		SmsWaterDrop d = e.drop;
+		d.size = sizeof d;
+		d.velocity.x *= 1.9f, d.velocity.y *= 1.9f, d.velocity.z *= 1.9f;
+		d.velocity.y += 2.0f;            // a little lob, so it carries
+		d.drop_size  = d.drop_size * 1.5f + 2;
+		d.hit_radius = d.hit_radius * 1.6f + 10;
+		d.hit_height = d.hit_height * 1.6f + 10;
+		d.alive      = d.alive * 2 + 20;
+		d.attack     = d.attack > 0 ? d.attack : 1;
+		d.tag        = kSnowTag | (uint32_t)e.player;
+		d.unseen     = 1;
+		d.player     = e.player;
+		if (api().water->emit(&d) >= 0)
+			api().water->use(e.player, 6);
+		return SMS_CANCEL;
+	}
+	int onWaterLand(SmsEvWaterLand& e)
+	{
+		if ((e.tag & 0xFFFF0000u) != kSnowTag)
+			return SMS_CONTINUE;
+		V at = v(e.position.x, e.position.y, e.position.z);
+		for (int i = 0; i < 5; i++) {
+			float a = 2 * kPi * i / 5;
+			addPuff(add(at, v(cosf(a) * 14, 6 + 4 * (i & 1), sinf(a) * 14)), 24);
+		}
+		addPuff(add(at, v(0, 10, 0)), 34);
+		return SMS_CANCEL; // it bursts: no rolling on as water
+	}
+	void drawSnowballs()
+	{
+		if (!ball || !SMS_API_HAS(&api(), water))
+			return;
+		const int n = api().water->count();
+		for (int i = 0; i < n; i++) {
+			SmsWaterDrop d;
+			memset(&d, 0, sizeof d);
+			d.size = sizeof d;
+			if (!api().water->get(i, &d) || (d.tag & 0xFFFF0000u) != kSnowTag)
+				continue;
+			const float sc = (d.drop_size > 1 ? d.drop_size : 8) / 10;
+			const float m[3][4] = {{sc, 0, 0, d.position.x}, {0, sc, 0, d.position.y}, {0, 0, sc, d.position.z}};
+			draw(ball, m);
+		}
+	}
+
 	void tick()
 	{
 		{
@@ -1218,6 +1306,7 @@ struct ChristmasAdditions : sms::Mod {
 			bool camOk = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
 			rudolph(camOk ? &cam : nullptr);
 			santa();
+			drawSnowballs();
 		}
 		const bool hats = config().get_int(handle(), "santa_hats", 1) != 0;
 		const bool clothes = config().get_int(handle(), "winter_clothes", 1) != 0;
@@ -1321,6 +1410,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("santa_beard", "A white beard on Santa Mario", false);
 		optionBool("no_moustache", "No Mario moustache", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
+		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
@@ -1365,6 +1455,7 @@ struct ChristmasAdditions : sms::Mod {
 		sBeard   = make(santaBeard);
 		sTache   = make(santaMoustache);
 		sMouth   = make(marioMouth);
+		ball     = make(snowball);
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
@@ -1373,6 +1464,8 @@ struct ChristmasAdditions : sms::Mod {
 
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(); }); // the tints went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
+		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
+		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
 		info("loaded: Santa hats, winter clothes, snowmen, Rudolph, Santa Mario and Christmas FLUDD");
 		return 0;
 	}

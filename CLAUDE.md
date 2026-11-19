@@ -26,4 +26,6 @@ Next, in order:
   no-moustache option. 1.4.0: the moustache really gone with the beard: its 31 vertices (a piece of its own
   in the face) folded to a point inside his head with parts->set_vertex (game 9877918), put back after; a
   skin-coloured cover only left a flesh moustache (Allebale).
-- **FLUDD shoots fast snowballs** in place of water, as a mod.
+- **FLUDD throws snowballs** (1.5.0, first try, option Off): SMS_EV_WATER_EMIT of the spray nozzle cancelled, a
+  drop of the mod's own (water->emit, tag "SN", unseen) every 0.16 s, 1.9 times as fast, bigger, drawn as a
+  snowball mesh; SMS_EV_WATER_LAND bursts it into snow puffs. Hits as water does, uses the tank (6 drops).
