@@ -432,31 +432,59 @@ void santaLegCuff(Mesh& m, float side, const RestFrame& f)
 }
 void santaLegCuffR(Mesh& m) { santaLegCuff(m, -1, kMarioLegR); }
 void santaLegCuffL(Mesh& m) { santaLegCuff(m, 1, kMarioLegL); }
-// Santa's beard (the "santa_beard" option, Off): fluffy white round his chin and jaw, a white moustache over
-// his own
+// Santa's beard (the "santa_beard" option, Off): one soft, full mass from his sideburns round his jaw, over
+// his mouth and down to a rounded point, its locks waving, off-white and a little grey-blue in the hollows
+// between them. A grid round his face (u from one ear to the other) and down (v from where it meets his face
+// to its end), made twice, the inside a little in, so it is solid from every side.
+V beardPoint(float u, float vv, float depth)
+{
+	float th   = u * 1.72f, co = cosf(th);
+	float top  = 92.5f + 8.5f * (1 - co);           // under his nose in front, up to his sideburns
+	float len  = 12 + 24 * powf(co > 0 ? co : 0.0f, 1.4f); // long in front, short by his ears
+	float y    = top - vv * len;
+	float puff = 1 + 0.32f * sinf(kPi * vv * 0.85f);    // fuller in the middle of its length
+	float narrow = 1 - 0.7f * vv * vv * vv * (co > 0 ? co : 0.0f); // gathering to a rounded point in front
+	float lock = 1.4f * sinf(u * 26) * (0.35f + vv) + 0.9f * sinf(u * 11 + vv * 7) + 0.6f * sinf(vv * 13 + u * 5);
+	float rx   = (24.5f + depth) * puff * narrow + lock * 0.35f;
+	float rz   = (19.5f + depth) * puff * narrow + lock * 0.6f;
+	return v(rx * sinf(th), y, 5.5f + rz * co);
+}
 void santaBeard(Mesh& m)
 {
-	m.light = norm(v(0.2f, 0.9f, 0.4f));
-	// rows of soft lumps round his jaw and chin, fuller and longer at the front
-	for (int row = 0; row < 4; row++) {
-		float y = 92 - row * 5.5f, reach = 1.0f - row * 0.12f;
-		for (int i = -6; i <= 6; i++) {
-			float a = i * 0.24f * reach;
-			m.sphere(v(18.5f * sinf(a) * reach, y - 2.5f * cosf(a) - row * 2.0f * cosf(a), 8 + 16 * cosf(a)), 7 - row * 0.5f,
-			         kFur, 10, 7);
-		}
+	m.light = norm(v(0.2f, 0.7f, 0.7f));
+	const int nu = 44, nv = 14;
+	for (int layer = 0; layer < 2; layer++) {
+		float depth = layer ? -5.5f : 0.0f;
+		for (int i = 0; i < nu; i++)
+			for (int k = 0; k < nv; k++) {
+				float u0 = -1 + 2.0f * i / nu, u1 = -1 + 2.0f * (i + 1) / nu;
+				float v0 = (float)k / nv, v1 = (float)(k + 1) / nv;
+				V a = beardPoint(u0, v0, depth), b = beardPoint(u1, v0, depth), c = beardPoint(u1, v1, depth),
+				  d = beardPoint(u0, v1, depth);
+				float groove = 0.5f + 0.5f * sinf((u0 + u1) * 13);   // between locks: a touch darker, bluer
+				Rgb col = {(uint8_t)(248 - 26 * groove), (uint8_t)(248 - 22 * groove), (uint8_t)(250 - 12 * groove)};
+				if (layer == 0)
+					m.quad(a, d, c, b, col);
+				else
+					m.quad(a, b, c, d, Rgb{214, 218, 228});
+			}
 	}
-	m.sphere(v(0, 74, 18), 9, kFur, 12, 8); // its point
 	intoFrame(m, kMarioHead);
 }
-// a white moustache over his own, with the beard
+// a white moustache with the beard: two soft locks from under his nose curling out and down
 void santaMoustache(Mesh& m)
 {
-	m.light = norm(v(0.2f, 0.9f, 0.4f));
-	m.sphere(v(-8, 96.5f, 31), 6.2f, kFur, 10, 7);
-	m.sphere(v(8, 96.5f, 31), 6.2f, kFur, 10, 7);
-	m.sphere(v(-15, 95, 27), 5, kFur, 10, 7);
-	m.sphere(v(15, 95, 27), 5, kFur, 10, 7);
+	m.light = norm(v(0.2f, 0.7f, 0.7f));
+	for (int s = -1; s <= 1; s += 2) {
+		std::vector<V> c;
+		std::vector<float> r;
+		for (int i = 0; i <= 10; i++) {
+			float t = i / 10.0f;
+			c.push_back(v(s * (1.5f + 17 * t), 95.5f - 1.5f * t - 5 * t * t, 30.5f - 9 * t * t));
+			r.push_back(4.8f * (1 - t) + 1.6f * t);
+		}
+		m.tube(c, r, kFur, 10);
+	}
 	intoFrame(m, kMarioHead);
 }
 // His own moustache gone (the "santa_no_moustache" option, with the beard): its triangles in his face
@@ -531,12 +559,21 @@ const float kMoustache[][3][3] = {
 };
 void moustacheCover(Mesh& m)
 {
-	m.light = norm(v(0.2f, 0.6f, 0.8f));
-	const Rgb skin = {255, 186, 146};
-	for (size_t i = 0; i < sizeof kMoustache / sizeof kMoustache[0]; i++)
-		m.tri(v(kMoustache[i][0][0], kMoustache[i][0][1], kMoustache[i][0][2]),
-		      v(kMoustache[i][1][0], kMoustache[i][1][1], kMoustache[i][1][2]),
-		      v(kMoustache[i][2][0], kMoustache[i][2][1], kMoustache[i][2][2]), skin);
+	// lit straight on, so it is all one even skin colour (the face's own, as the game shows it nearby)
+	m.light = norm(v(0, 0.25f, 1));
+	const Rgb skin = {244, 164, 130};
+	const V mid = v(0, 98, 21.5f);
+	for (size_t i = 0; i < sizeof kMoustache / sizeof kMoustache[0]; i++) {
+		V p[3];
+		for (int k = 0; k < 3; k++) {
+			V q = v(kMoustache[i][k][0], kMoustache[i][k][1], kMoustache[i][k][2]);
+			V out = sub(q, mid);
+			out.z = 0;
+			// a little further out from his face than it, and spread a little wider, over its dark edges
+			p[k] = add(add(q, mul(norm(sub(q, v(0, 100, 0))), 0.9f)), mul(out, 0.08f));
+		}
+		m.tri(p[0], p[1], p[2], skin);
+	}
 	intoFrame(m, kMarioHead);
 }
 // FLUDD wrapped as a present: a gold ribbon round its tank and along its back, a bow where they cross, and a
@@ -1080,10 +1117,10 @@ struct ChristmasAdditions : sms::Mod {
 			if (!firstPerson()) {
 				drawOn(mario, "jnt_head", sHat);
 				if (config().get_int(handle(), "santa_beard", 0)) {
+					// his own moustache always goes with the beard; a white one over it unless he is clean shaven
 					drawOn(mario, "jnt_head", sBeard);
-					if (config().get_int(handle(), "santa_no_moustache", 0))
-						drawOn(mario, "jnt_head", sNoTache);
-					else
+					drawOn(mario, "jnt_head", sNoTache);
+					if (!config().get_int(handle(), "santa_no_moustache", 0))
 						drawOn(mario, "jnt_head", sTache);
 				}
 			}
