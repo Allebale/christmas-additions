@@ -450,29 +450,67 @@ void santaLegCuff(Mesh& m, float side, const RestFrame& f)
 }
 void santaLegCuffR(Mesh& m) { santaLegCuff(m, -1, kMarioLegR); }
 void santaLegCuffL(Mesh& m) { santaLegCuff(m, 1, kMarioLegL); }
-// Santa's beard (the "santa_beard" option, Off): one soft, full mass from his sideburns round his jaw, over
-// his mouth and down to a rounded point, its locks waving, off-white and a little grey-blue in the hollows
+// Santa's beard (the "santa_beard" option, Off): one soft, full mass from his sideburns close round his jaw,
+// over his mouth and down to a rounded point, its locks waving, off-white and a little grey-blue in the hollows
 // between them. A grid round his face (u from one ear to the other) and down (v from where it meets his face
-// to its end), made twice, the inside a little in, so it is solid from every side.
-V beardPoint(float u, float vv, float depth)
+// to its end), made twice, the inside on his face, so it is solid from every side.
+// How far his face, neck and chest reach out from his middle line (x 0, z 3), all round (every 10 degrees from
+// 100 on his right through his front to 100 on his left) at heights 60 to 100, every 4: found by casting rays
+// at ma_mdl1 (his nose and ears left out)
+const float kFaceR[21][11] = {
+	{26.7f, 26.6f, 26.9f, 21.3f, 21.3f, 21.3f, 21.3f, 21.0f, 17.8f, 20.9f, 21.6f},
+	{25.7f, 25.6f, 25.8f, 24.6f, 21.3f, 21.3f, 14.3f, 15.9f, 17.8f, 20.3f, 21.5f},
+	{25.1f, 25.0f, 25.2f, 23.5f, 14.0f, 14.0f, 15.7f, 15.7f, 18.4f, 20.3f, 21.6f},
+	{25.2f, 25.2f, 24.6f, 23.6f, 21.8f, 19.9f, 17.4f, 17.1f, 18.1f, 20.2f, 21.2f},
+	{25.0f, 24.9f, 24.0f, 23.1f, 19.2f, 19.2f, 15.9f, 16.2f, 17.6f, 20.4f, 21.0f},
+	{24.0f, 23.8f, 23.2f, 22.3f, 20.8f, 18.2f, 18.2f, 14.3f, 17.4f, 19.3f, 19.6f},
+	{23.7f, 23.5f, 23.1f, 21.6f, 20.1f, 17.8f, 15.4f, 14.2f, 17.0f, 18.5f, 18.9f},
+	{23.1f, 22.9f, 22.5f, 21.2f, 19.9f, 17.7f, 6.9f, 14.0f, 17.2f, 18.3f, 18.7f},
+	{22.3f, 22.2f, 21.9f, 20.5f, 18.9f, 9.7f, 8.2f, 14.1f, 17.2f, 17.7f, 18.2f},
+	{18.4f, 17.7f, 16.8f, 15.0f, 12.3f, 9.1f, 8.8f, 14.8f, 17.5f, 17.7f, 17.7f},
+	{19.0f, 18.3f, 17.2f, 14.7f, 12.0f, 8.9f, 8.7f, 15.5f, 18.2f, 18.2f, 18.2f},
+	{18.4f, 17.7f, 16.8f, 15.0f, 12.3f, 9.1f, 8.9f, 14.8f, 17.5f, 17.7f, 17.7f},
+	{22.3f, 22.2f, 21.9f, 20.5f, 18.9f, 9.7f, 8.2f, 14.1f, 17.2f, 17.7f, 18.2f},
+	{23.1f, 22.9f, 22.5f, 21.2f, 19.9f, 17.7f, 6.9f, 14.0f, 17.2f, 18.3f, 18.7f},
+	{23.7f, 23.5f, 23.1f, 21.6f, 20.1f, 17.8f, 15.4f, 14.2f, 17.0f, 18.5f, 18.9f},
+	{24.0f, 23.8f, 23.2f, 22.3f, 20.8f, 18.2f, 18.2f, 14.3f, 17.4f, 19.3f, 19.6f},
+	{25.0f, 24.9f, 24.0f, 23.1f, 19.2f, 19.2f, 15.9f, 16.2f, 17.6f, 20.4f, 21.0f},
+	{25.2f, 25.2f, 24.6f, 23.6f, 21.8f, 19.9f, 17.4f, 17.1f, 18.1f, 20.2f, 21.2f},
+	{25.1f, 25.0f, 25.2f, 23.5f, 14.0f, 14.0f, 15.6f, 15.6f, 18.4f, 20.3f, 21.6f},
+	{25.7f, 25.6f, 25.8f, 24.6f, 21.3f, 21.3f, 14.3f, 15.9f, 17.8f, 20.3f, 21.5f},
+	{26.7f, 26.6f, 26.9f, 21.3f, 21.3f, 21.3f, 21.3f, 21.0f, 17.8f, 20.9f, 21.6f}
+};
+float faceRadius(float th, float y)
 {
-	float th   = u * 1.72f, co = cosf(th);
-	float top  = 92.5f + 8.5f * (1 - co);           // under his nose in front, up to his sideburns
-	float len  = 12 + 24 * powf(co > 0 ? co : 0.0f, 1.4f); // long in front, short by his ears
+	float a = (th * 180 / kPi + 100) / 10, h = (y - 60) / 4;
+	a = a < 0 ? 0 : (a > 20 ? 20 : a);
+	h = h < 0 ? 0 : (h > 10 ? 10 : h);
+	int a0 = (int)a, h0 = (int)h;
+	int a1 = a0 < 20 ? a0 + 1 : 20, h1 = h0 < 10 ? h0 + 1 : 10;
+	float fa = a - a0, fh = h - h0;
+	float lo = kFaceR[a0][h0] * (1 - fa) + kFaceR[a1][h0] * fa, hi = kFaceR[a0][h1] * (1 - fa) + kFaceR[a1][h1] * fa;
+	return lo * (1 - fh) + hi * fh;
+}
+// a point of the beard: its inside (outer 0) on his face, a hair out; its outside thicker in the middle of
+// its length and waving in locks
+V beardPoint(float u, float vv, float outer)
+{
+	float th   = u * 1.72f, co = cosf(th), front = co > 0 ? co : 0.0f;
+	float top  = 92.5f + 8.5f * (1 - co);              // under his nose in front, up to his sideburns
+	float len  = 10 + 22 * powf(front, 1.4f);          // longer in front, short by his ears
 	float y    = top - vv * len;
-	float puff = 1 + 0.32f * sinf(kPi * vv * 0.85f);    // fuller in the middle of its length
-	float narrow = 1 - 0.7f * vv * vv * vv * (co > 0 ? co : 0.0f); // gathering to a rounded point in front
-	float lock = 1.4f * sinf(u * 26) * (0.35f + vv) + 0.9f * sinf(u * 11 + vv * 7) + 0.6f * sinf(vv * 13 + u * 5);
-	float rx   = (24.5f + depth) * puff * narrow + lock * 0.35f;
-	float rz   = (19.5f + depth) * puff * narrow + lock * 0.6f;
-	return v(rx * sinf(th), y, 5.5f + rz * co);
+	float lock = 1.0f * sinf(u * 26) * (0.35f + vv) + 0.7f * sinf(u * 11 + vv * 7) + 0.5f * sinf(vv * 13 + u * 5);
+	float thick = outer * (3.8f + 3.6f * sinf(kPi * (0.15f + 0.85f * vv)) + lock * 0.6f);
+	float r    = faceRadius(th, y) + 0.8f + (thick > 0 ? thick : 0.0f);
+	r *= 1 - 0.35f * vv * vv * vv * front;             // gathering to a rounded point in front
+	return v(r * sinf(th), y, 3 + r * co + 4 * vv * vv * front); // the point a little forward, off his chest
 }
 void santaBeard(Mesh& m)
 {
 	m.light = norm(v(0.2f, 0.7f, 0.7f));
 	const int nu = 44, nv = 14;
 	for (int layer = 0; layer < 2; layer++) {
-		float depth = layer ? -5.5f : 0.0f;
+		float depth = layer ? 0.0f : 1.0f; // the outside, then the inside against his face
 		for (int i = 0; i < nu; i++)
 			for (int k = 0; k < nv; k++) {
 				float u0 = -1 + 2.0f * i / nu, u1 = -1 + 2.0f * (i + 1) / nu;
