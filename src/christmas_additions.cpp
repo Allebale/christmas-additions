@@ -377,7 +377,7 @@ void ringTube(Mesh& m, float y, float a, float z0, float b, float b2, float lift
 }
 // Santa's hat over Mario's cap: a fur brim round it (the cap's peak still shows under it in front), a soft
 // red cone flopping back, a fur pom-pom at its end
-void santaHatMario(Mesh& m)
+void costumeHat(Mesh& m, Rgb body, bool bell)
 {
 	m.light = norm(v(0.2f, 0.9f, 0.4f));
 	ringTube(m, 119, 30.5f, -5.5f, 30, 30, 8, 5.5f, kFur, 40);
@@ -389,8 +389,39 @@ void santaHatMario(Mesh& m)
 		c.push_back(v(6 * t * t, 121 + 46 * t - 20 * t * t, -5 - 8 * t - 36 * t * t));
 		r.push_back(31 * (1 - t) * (1 - 0.25f * t) + 4 * t);
 	}
-	m.tube(c, r, kSanta, 22);
-	m.sphere(c.back(), 8.5f, kFur, 14, 9);
+	m.tube(c, r, body, 22);
+	if (bell) { // a little gold bell at its end, its mouth down
+		V tip = c.back();
+		m.cylinder(add(tip, v(0, 1, 0)), add(tip, v(0, -7, 0)), 3, 6.5f, kGold, 12);
+		m.sphere(add(tip, v(0, -7.5f, 0)), 1.6f, Rgb{150, 110, 30}, 8, 6);
+	} else
+		m.sphere(c.back(), 8.5f, kFur, 14, 9);
+	intoFrame(m, kMarioHead);
+}
+void santaHatMario(Mesh& m) { costumeHat(m, kSanta, false); }
+// The elf's: the same hat in green, a bell at its end
+const Rgb kElf = {30, 130, 56};
+void elfHatMario(Mesh& m) { costumeHat(m, kElf, true); }
+// Pointed elf ears over his own (his ears stand out from 22 to 31 at 98 to 117 high, round x 28, z -7): a
+// skin-coloured leaf from each, up and back to a point just outside the hat's brim
+void elfEars(Mesh& m)
+{
+	m.light = norm(v(0.2f, 0.9f, 0.4f));
+	const Rgb skin = {248, 172, 134}, inner = {226, 132, 112};
+	for (int s = -1; s <= 1; s += 2) {
+		std::vector<V> c;
+		std::vector<float> r;
+		for (int i = 0; i <= 10; i++) {
+			float t = i / 10.0f;
+			c.push_back(v(s * (26.5f + 15 * t), 106 + 18 * t + 3 * t * t, -6 - 6 * t));
+			r.push_back(7.2f * (1 - t) * (1 - 0.4f * t) + 0.5f * t);
+		}
+		m.tube(c, r, skin, 12);
+		// its hollow: a darker strip down its front
+		for (size_t i = 0; i + 1 < c.size() - 2; i++)
+			m.cylinder(add(c[i], v(0, 0, r[i] * 0.55f)), add(c[i + 1], v(0, 0, r[i + 1] * 0.55f)), r[i] * 0.4f,
+			           r[i + 1] * 0.4f, inner, 8);
+	}
 	intoFrame(m, kMarioHead);
 }
 // a black belt with a gold buckle round his waist
@@ -814,7 +845,8 @@ struct ChristmasAdditions : sms::Mod {
 	SmsMesh hat = 0, head = 0, buttons = 0, arms = 0;
 	SmsMesh antlers = 0, nose = 0, noseSnow = 0;
 	SmsMesh sHat = 0, sBelt = 0, sCuffR = 0, sCuffL = 0, sLegR = 0, sLegL = 0, sBeard = 0, sTache = 0, fluddDeco = 0;
-	SmsMesh sMouth = 0, ball = 0;
+	SmsMesh sMouth = 0, ball = 0, eHat = 0, eEars = 0;
+	int suitWorn = 0; // the costume whose colours are on him: 0 none, 1 Santa, 2 elf
 	float lastSnowball[2] = {-9, -9}; // when each player last threw one
 	bool tacheGone = false, tacheLeft = false; // his own moustache folded away; or never touched (not the game's model)
 	bool capOff = false; // his own cap left out
@@ -1180,11 +1212,12 @@ struct ChristmasAdditions : sms::Mod {
 	{
 		if (!partsHave(offsetof(SmsPartsApi, yoshi_color) + sizeof(void*)))
 			return;
-		const bool suit = config().get_int(handle(), "santa_mario", 1) != 0;
+		const int costume = config().get_int(handle(), "costume", 1); // 0 none, 1 Santa, 2 an elf
+		const bool suit   = costume == 1 || costume == 2, elf = costume == 2;
 		const bool xf   = config().get_int(handle(), "christmas_fludd", 1) != 0;
 		SmsObject mario = parts->player_part(SMS_PARTS_MARIO);
 		SmsObject fludd = parts->player_part(SMS_PARTS_FLUDD);
-		if (mario && (suit || santaOn)) {
+		if (mario && (suit || santaOn || suitWorn != costume)) {
 			// the body's materials are _mat_head, _mat_head(2)..(8) (one picture for all): (2) the overalls'
 			// bib, _mat_head the shirt and trousers, (3) and (4) the shoes, (5) and (6) the gloves, (7) the
 			// cap, (8) the face. A tint holds for every name holding the one given, so all first, then back.
@@ -1197,14 +1230,16 @@ struct ChristmasAdditions : sms::Mod {
 				capOff = suit;
 			}
 			if (suit) {
-				parts->tint(mario, "_mat_head", 0xB8121CF0u);
+				const SmsColor cloth = elf ? 0x1E8238F0u : 0xB8121CF0u; // an elf's green, Santa's red
+				parts->tint(mario, "_mat_head", cloth);
 				parts->tint(mario, "_mat_head(", 0);
-				parts->tint(mario, "_mat_head(2)", 0xB8121CF0u);
+				parts->tint(mario, "_mat_head(2)", cloth);
 				parts->tint(mario, "_mat_head(3)", 0x1C1A1EE6u);
 				parts->tint(mario, "_mat_head(4)", 0x1C1A1EE6u);
 			} else
 				parts->tint(mario, "", 0);
-			santaOn = suit;
+			santaOn  = suit;
+			suitWorn = costume;
 		}
 		if (fludd && (xf || fluddOn)) {
 			if (xf) {
@@ -1225,7 +1260,9 @@ struct ChristmasAdditions : sms::Mod {
 			drawOn(mario, kFaceJoint, sMouth);
 		if (mario && suit) {
 			if (!firstPerson()) {
-				drawOn(mario, kFaceJoint, sHat);
+				drawOn(mario, kFaceJoint, elf ? eHat : sHat);
+				if (elf)
+					drawOn(mario, kFaceJoint, eEars);
 				if (config().get_int(handle(), "santa_beard", 0)) {
 					// his own moustache goes with the beard (shaveMoustache); a white one unless he is clean shaven
 					drawOn(mario, kFaceJoint, sBeard);
@@ -1419,8 +1456,8 @@ struct ChristmasAdditions : sms::Mod {
 		optionChoice("snowfall", "Falling snow", {"Off", "In snowy levels", "Everywhere"}, 1);
 		optionBool("rudolph", "Yoshi is Rudolph the red-nosed reindeer", true);
 		optionBool("rudolph_nose_snow", "A little snow on Rudolph's nose", false);
-		optionBool("santa_mario", "Mario dressed as Santa", true);
-		optionBool("santa_beard", "A white beard on Santa Mario", false);
+		optionChoice("costume", "Mario's costume", {"His own clothes", "Santa", "Elf"}, 1);
+		optionBool("santa_beard", "A white beard with Mario's costume", false);
 		optionBool("no_moustache", "No Mario moustache", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
@@ -1469,6 +1506,8 @@ struct ChristmasAdditions : sms::Mod {
 		sTache   = make(santaMoustache);
 		sMouth   = make(marioMouth);
 		ball     = make(snowball);
+		eHat     = make(elfHatMario);
+		eEars    = make(elfEars);
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
