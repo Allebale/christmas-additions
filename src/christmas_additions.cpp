@@ -233,22 +233,51 @@ struct Ball {
 
 // ---------------------------------------------------------------- snow: prints, puffs and flakes
 
-// Pictures: a shoe print (pressed snow: pale blue-grey, a brighter rim), and soft round dots
+// Pictures: a boot pressed into snow, and soft round dots.
+// The print is one boot shape (wide toe, narrower arch, round heel), seen as a dip: its floor
+// a little shaded, its walls darker, the toe pressed deepest, a faint lip of snow pushed up
+// round it, and some grain so it is not a clean sticker.
+const int kPrintW = 64, kPrintH = 128;
+float smooth01(float a, float b, float x)
+{
+	float t = (x - a) / (b - a);
+	t = t < 0 ? 0 : (t > 1 ? 1 : t);
+	return t * t * (3 - 2 * t);
+}
+float grain(int x, int y)
+{
+	unsigned h = (unsigned)x * 374761393u + (unsigned)y * 668265263u;
+	h = (h ^ (h >> 13)) * 1274126177u;
+	return ((h ^ (h >> 16)) & 1023) / 1023.0f; // 0..1
+}
 std::vector<uint8_t> printPicture()
 {
-	const int w = 32, h = 64;
+	const int w = kPrintW, h = kPrintH;
 	std::vector<uint8_t> px(w * h * 4);
 	for (int y = 0; y < h; y++)
 		for (int x = 0; x < w; x++) {
 			float u = (x + 0.5f) / w * 2 - 1, vv = (y + 0.5f) / h * 2 - 1; // -1..1, the toe at the top
-			float sole = (u * u) / 0.80f + ((vv + 0.30f) * (vv + 0.30f)) / 0.42f;
-			float heel = (u * u) / 0.55f + ((vv - 0.62f) * (vv - 0.62f)) / 0.09f;
-			float d    = sole < heel ? sole : heel; // under 1 inside
+			// half the boot's width along it: toe 0.78, arch 0.52, heel 0.62
+			float hw = 0.78f - 0.26f * expf(-((vv - 0.30f) * (vv - 0.30f)) / 0.05f) - 0.16f * smooth01(0.45f, 0.95f, vv);
+			float au = fabsf(u) / (hw * 0.80f), av = fabsf(vv) / 0.80f;
+			float d = powf(powf(au, 2.6f) + powf(av, 2.6f), 1 / 2.6f); // under 1 inside the boot
+			d += (grain(x / 5, y / 5) - 0.5f) * 0.06f;                  // a ragged edge
+			float g = grain(x, y) - 0.5f;
+			float r, gr, b, a;
+			if (d < 1) {
+				float wall = smooth01(0.62f, 1.0f, d);                 // 0 on the floor, 1 at the wall
+				float toe  = smooth01(0.2f, -0.7f, vv);                // the toe pressed deeper
+				float dark = 0.30f + 0.45f * wall + 0.15f * toe;       // how dark: shade of the dip
+				r = 150 - 60 * dark, gr = 164 - 58 * dark, b = 205 - 40 * dark;
+				a = (0.42f + 0.33f * wall + 0.12f * toe) * (1 + g * 0.35f);
+			} else {
+				float lip = 1 - smooth01(1.0f, 1.28f, d);              // pushed-up snow round it
+				r = 255, gr = 255, b = 255;
+				a = 0.30f * lip * (1 + g * 0.5f);
+			}
+			a = a < 0 ? 0 : (a > 1 ? 1 : a);
 			uint8_t* p = &px[(y * w + x) * 4];
-			float a    = d < 1 ? (d > 0.78f ? (1 - d) / 0.22f : 1.0f) : 0.0f;
-			bool rim   = d > 0.72f && d < 1;
-			p[0] = rim ? 250 : 178, p[1] = rim ? 252 : 192, p[2] = rim ? 255 : 220;
-			p[3] = (uint8_t)(a * (rim ? 200 : 150));
+			p[0] = (uint8_t)r, p[1] = (uint8_t)gr, p[2] = (uint8_t)b, p[3] = (uint8_t)(a * 255);
 		}
 	return px;
 }
@@ -268,7 +297,7 @@ std::vector<uint8_t> softDot(int w, float hard)
 
 struct Print {
 	V p;
-	float yaw, born;
+	float yaw, born, size;
 };
 struct Puff {
 	V p;
@@ -314,6 +343,7 @@ struct ChristmasAdditions : sms::Mod {
 	bool lastValid = false, wasOnGround = true;
 	float stride = 0, lastVy = 0, snowLevel = 0;
 	int side = 1;
+	unsigned printSeed = 777;
 
 	void addPuff(V p, float size)
 	{
@@ -371,11 +401,16 @@ struct ChristmasAdditions : sms::Mod {
 			}
 		stride += moved;
 		const float speed = dt > 0 ? moved / dt : 0; // units a second
-		if (stride > 62) {
-			stride   = 0;
-			side     = -side;
-			V foot   = add(ground, mul(right, 11.0f * side));
-			Print pr = {foot, yaw, now};
+		// a print a step: longer steps the faster he goes
+		float step = 70 + speed * 0.06f;
+		step = step > 125 ? 125 : step;
+		if (stride > step) {
+			stride = 0;
+			side   = -side;
+			printSeed = printSeed * 1103515245u + 12345u;
+			float jitter = ((printSeed >> 8) % 1000) / 1000.0f - 0.5f; // -0.5..0.5
+			V foot   = add(ground, mul(right, 14.0f * side));
+			Print pr = {foot, yaw + jitter * 0.16f + side * 0.06f, now, 1 + jitter * 0.12f};
 			if (prints.size() >= 160)
 				prints.erase(prints.begin());
 			prints.push_back(pr);
@@ -395,7 +430,7 @@ struct ChristmasAdditions : sms::Mod {
 			const Print& pr = prints[i];
 			float age = (now - pr.born) / life, a = age < 0.85f ? 1.0f : (1 - age) / 0.15f;
 			V f = v(sinf(pr.yaw), 0, cosf(pr.yaw)), r = v(cosf(pr.yaw), 0, -sinf(pr.yaw));
-			V hf = mul(f, 15), hr = mul(r, 8);
+			V hf = mul(f, 30 * pr.size), hr = mul(r, 15 * pr.size); // a boot about 60 long, Mario's size
 			quad(c, add(sub(pr.p, hr), hf), add(add(pr.p, hr), hf), sub(add(pr.p, hr), hf), sub(sub(pr.p, hr), hf), 255, 255, 255,
 			     (uint8_t)(255 * a));
 		}
@@ -476,7 +511,7 @@ struct ChristmasAdditions : sms::Mod {
 	void makeSnow()
 	{
 		std::vector<uint8_t> px = printPicture();
-		printTex                = api().models->texture_create(handle(), &px[0], 32, 64);
+		printTex                = api().models->texture_create(handle(), &px[0], kPrintW, kPrintH);
 		px                      = softDot(32, 0.15f);
 		puffTex                 = api().models->texture_create(handle(), &px[0], 32, 32);
 		px                      = softDot(16, 0.45f);
