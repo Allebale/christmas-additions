@@ -1889,7 +1889,8 @@ struct ChristmasAdditions : sms::Mod {
 			Bomb& b = bombs[i];
 			const V mid = add(b.at, v(0, kBombFootY + kBombR, 0));
 			if (b.gone > 0) {
-				b.gone -= dt;
+				if (!setting("enemies_once", 0)) // (or gone for good this visit)
+					b.gone -= dt;
 				if (b.gone <= 0) { // back home, as new, with a puff
 					Bomb n;
 					n.home = n.at = n.target = b.home;
@@ -2182,8 +2183,9 @@ struct ChristmasAdditions : sms::Mod {
 		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
 		for (size_t i = 0; i < gingers.size(); i++) {
 			Ginger& g = gingers[i];
-			if (g.gone > 0) { // crumbled: back home after a while
-				g.gone -= dt;
+			if (g.gone > 0) { // crumbled: back home after a while (or never, this visit, with "enemies_once")
+				if (!setting("enemies_once", 0))
+					g.gone -= dt;
 				if (g.gone <= 0)
 					g.at = g.target = g.home, g.chasing = false, g.wait = 1, g.wet = 0, g.push = v(0, 0, 0);
 				continue;
@@ -2587,6 +2589,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("gingerbread_chase", "Gingerbread men chase and hit Mario (jump on them)", true);
 		optionBool("baubles", "Bauble Bob-ombs walk about where a level puts them", true);
 		optionBool("baubles_chase", "Bauble Bob-ombs light up, chase Mario and explode (jump on them)", true);
+		optionBool("enemies_once", "Beaten gingerbread men and bauble Bob-ombs stay gone till the level loads", false);
 		// FLUDD Weapons loading (now or later): told again
 		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
 			if (e.id && !strcmp(e.id, "fludd-weapons"))
