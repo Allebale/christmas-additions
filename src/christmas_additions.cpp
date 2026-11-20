@@ -1545,10 +1545,21 @@ struct ChristmasAdditions : sms::Mod {
 			else
 				leftArea = leftEpisode = -1;
 		});
-		if (SMS_API_HAS(&api(), parts) && api().parts->magic == SMS_PARTS_MAGIC)
-			parts = api().parts;
+		// api->parts: right after `models` in Chase's port with it (the snowman-enemy branch), after
+		// reflections and grass in Remastered: found by its magic in the pointers after `models`
+		if (SMS_API_HAS(&api(), models)) {
+			const size_t at = offsetof(SmsApi, models) + sizeof(void*);
+			for (int k = 0; k < 3 && !parts; k++) {
+				const size_t off = at + k * sizeof(void*);
+				if (api().size < off + sizeof(void*))
+					break;
+				const SmsPartsApi* t = *(const SmsPartsApi* const*)((const char*)&api() + off);
+				if (t && t->magic == SMS_PARTS_MAGIC)
+					parts = t;
+			}
+		}
 		if (!parts || !SMS_API_HAS(&api(), models) || !SMS_API_HAS(&api(), actor)) {
-			warn("this game has no api->parts (Super Mario Sunshine Remastered's): no hats, clothes or snowmen");
+			warn("this game has no api->parts: no hats, clothes or snowmen");
 			return 0;
 		}
 		antlers = make(rudolphAntlers);
