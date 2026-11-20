@@ -1014,6 +1014,7 @@ struct ChristmasAdditions : sms::Mod {
 	};
 	std::vector<Ginger> gingers;
 	int gingerLooks = 0;
+	float gingerRest = 0; // after any of them hits Mario: none swings again till this runs out
 	double gingerClock = -1;
 	SmsMesh gBody = 0, gArm[2] = {}, gLeg[2] = {};
 	std::set<SmsObject> baubled;        // Bob-omb baubles tinted, this stage
@@ -1625,6 +1626,7 @@ struct ChristmasAdditions : sms::Mod {
 			}
 		}
 		const bool fierce  = setting("gingerbread_chase", 1) != 0;
+		gingerRest -= dt;
 		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
 		for (size_t i = 0; i < gingers.size(); i++) {
 			Ginger& g = gingers[i];
@@ -1702,9 +1704,13 @@ struct ChristmasAdditions : sms::Mod {
 				else
 					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
 				// close: a swing at him (his right arm), once in a while
-				if (d2 < 115.0f * 115.0f && fabsf(mdy) < 120 && g.cool <= 0) {
-					g.cool  = 1.6f;
-					g.swing = 0.35f;
+				// Not while he is down, or getting up: a hit gives every gingerbread man a rest longer
+				// than Mario takes to get back on his feet (Allebale: they pummelled him to death)
+				const bool down = (p.status & 0xFFFF0u) == 0x208B0u; // the knocked-down falls (0x208B0..0x208BF)
+				if (d2 < 115.0f * 115.0f && fabsf(mdy) < 120 && g.cool <= 0 && gingerRest <= 0 && !down) {
+					g.cool     = 5.0f;
+					gingerRest = 4.0f;
+					g.swing    = 0.35f;
 					if (canHurt && !p.invincible) {
 						// a point of health, then knocked back off his feet, away from him (the game's own
 						// knocked-back fall, as a wall hit too hard gives), facing him
