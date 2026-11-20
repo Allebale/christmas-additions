@@ -1008,6 +1008,7 @@ struct ChristmasAdditions : sms::Mod {
 		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
 		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
 		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (3 melts him); trembling; his end so far
+		float hiss = 0, dry = 0;             // till the next splash sound; till he starts drying off
 		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
 		bool chasing = false;
 		unsigned seed = 1;
@@ -1597,6 +1598,14 @@ struct ChristmasAdditions : sms::Mod {
 			g.at.y = gr.floor;
 		return moved >= (speed * dt * 0.3f) * (speed * dt * 0.3f);
 	}
+	// a sound where he is (the game's own, Mario's ear hearing it from there)
+	void sound(uint32_t id, V at)
+	{
+		if (!SMS_API_HAS(&api(), audio) || !api().audio || !api().audio->play_sound_at)
+			return;
+		SmsVec3 s3 = {at.x, at.y + 60, at.z};
+		api().audio->play_sound_at(id, &s3);
+	}
 	void gingerbread(const SmsPlayer& p)
 	{
 		const double t = api().core->time();
@@ -1656,7 +1665,10 @@ struct ChristmasAdditions : sms::Mod {
 					if (!wa->get(k, &wd) || wd.landed || wd.tag != 0)
 						continue;
 					const float ddx = wd.position.x - g.at.x, ddz = wd.position.z - g.at.z, ddy = wd.position.y - g.at.y;
-					if (ddx * ddx + ddz * ddz < 55.0f * 55.0f && ddy > -10 && ddy < 230) {
+					// only spray still flying fast at him: drops lying or rolling about his feet don't count
+					// (they held him still long after the spraying, Allebale)
+					const float sp2 = wd.velocity.x * wd.velocity.x + wd.velocity.y * wd.velocity.y + wd.velocity.z * wd.velocity.z;
+					if (sp2 > 8.0f * 8.0f && ddx * ddx + ddz * ddz < 55.0f * 55.0f && ddy > 20 && ddy < 230) {
 						hitNow = true;
 						wd.alive = 0;
 						if (wa->set)
@@ -1666,15 +1678,21 @@ struct ChristmasAdditions : sms::Mod {
 			}
 			if (hitNow) {
 				g.wet += dt * 2.0f; // (the stream reaches him a tick in two)
+				if (g.hiss <= 0)
+					sound(0x2881, g.at), g.hiss = 0.35f; // MSD_SE_EN_POIHANA_WATER_HIT
 				g.hurt = 0.25f;
+				g.dry  = 4.0f;
 				g.chasing = true;   // and he is cross
 				if (g.wet >= 3.0f) {
 					g.dying = 0.001f, g.dieKind = 1;
+					sound(0x283A, g.at); // MSD_SE_EN_MAMEGESO_MELT
 					info("a gingerbread man melted");
 					continue;
 				}
 			}
-			g.hurt -= dt;
+			g.hurt -= dt, g.hiss -= dt, g.dry -= dt;
+			if (g.dry <= 0 && g.wet > 0) // left alone a while: he dries off again
+				g.wet = std::max(0.0f, g.wet - dt * 0.3f);
 			g.cool -= dt, g.swing -= dt;
 			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z, mdy = p.position.y - g.at.y;
 			const float d2 = mdx * mdx + mdz * mdz;
@@ -1683,13 +1701,15 @@ struct ChristmasAdditions : sms::Mod {
 			if (fierce && d2 < 75.0f * 75.0f && mdy > 110 && mdy < 270 && p.velocity.y < 0) {
 				g.dying = 0.001f, g.dieKind = 0;
 				addPuff(add(g.at, v(0, 90, 0)), 50);
+				sound(0x3888, g.at); // MSD_SE_OBJ_WATERMELON_CRASH: a crunch
+				sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
 				SmsVec3 up = p.velocity;
 				up.y = 28;
 				player().set_velocity(&up);
 				continue;
 			}
 			if (!g.chasing && fierce && d2 < 1200.0f * 1200.0f && fabsf(mdy) < 400)
-				g.chasing = true;
+				g.chasing = true, sound(0x2826, g.at); // he's seen Mario: MSD_SE_EN_HMKRI_VO_ATTACK
 			if (g.chasing && (!fierce || d2 > 1700.0f * 1700.0f || hx * hx + hz * hz > 2500.0f * 2500.0f || fabsf(mdy) > 700)) {
 				g.chasing = false; // too far from Mario, or from home: back
 				g.target  = g.home;
@@ -1697,10 +1717,8 @@ struct ChristmasAdditions : sms::Mod {
 			}
 			g.speed = 0;
 			if (g.chasing) {
-				if (g.hurt > 0)
-					gingerStep(g, p.position.x, p.position.z, 0.0f, 3.0f, dt); // held back by the water
-				else if (d2 > 75.0f * 75.0f)
-					gingerStep(g, p.position.x, p.position.z, 330.0f, 6.0f, dt);
+				if (d2 > 75.0f * 75.0f) // the water slows him, but he keeps coming
+					gingerStep(g, p.position.x, p.position.z, g.hurt > 0 ? 130.0f : 330.0f, g.hurt > 0 ? 3.0f : 6.0f, dt);
 				else
 					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
 				// close: a swing at him (his right arm), once in a while
@@ -1711,6 +1729,7 @@ struct ChristmasAdditions : sms::Mod {
 					g.cool     = 5.0f;
 					gingerRest = 4.0f;
 					g.swing    = 0.35f;
+					sound(0x3867, g.at); // MSD_SE_OBJ_SWING1
 					if (canHurt && !p.invincible) {
 						// a point of health, then knocked back off his feet, away from him (the game's own
 						// knocked-back fall, as a wall hit too hard gives), facing him
@@ -1739,7 +1758,10 @@ struct ChristmasAdditions : sms::Mod {
 					g.wait   = 0.5f;
 				}
 			}
+			const float before = g.phase;
 			g.phase += dt * g.speed * 0.045f;
+			if (g.speed > 1 && floorf(g.phase / kPi) != floorf(before / kPi)) // a foot down
+				sound(0x2839, g.at); // MSD_SE_EN_HMKRI_WALK
 			drawGinger(g, g.speed);
 		}
 	}
