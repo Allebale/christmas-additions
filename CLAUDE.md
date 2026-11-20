@@ -33,3 +33,11 @@ Next, in order:
   api->parts' hide_worn, and the palm-leaf hair hidden with hide_joint ("yashi_jnt", "leafL_jnt",
   "leafR_jnt"; game 3818444, SDK 80f47b0). Allebale sent bianco0.szs: montemc/momc_model.bmd and
   montew/mow_model.bmd (materials _eye_mat, _fuku_mat (men), _hand_mat, _leafback_mat).
+
+## Later (Allebale, Nov 20: "add later")
+
+- **Ice weapon**: when Christmas Additions is installed, the FLUDD Weapons mod's black goop weapon becomes
+  an ice weapon, its textures white-blueish ice. Must stay a mod change (Chase's rule); the two mods are
+  separate, so Christmas Additions has to find and retexture the goop weapon's look itself, or FLUDD
+  Weapons offers a general hook for it. Ask whether it should also behave like ice (freeze, slippery)
+  or only look icy.
