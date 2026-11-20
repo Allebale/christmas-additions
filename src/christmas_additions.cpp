@@ -297,6 +297,56 @@ void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
 	}
 }
 
+// Gingerbread men (the mod's own, walking about where a level marks with invisible coins named "Gingerbread N"):
+// a cookie figure in pieces that swing as he walks, tall and long-legged as Il Piantissimo. Built round
+// (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
+// thickness. Each piece hangs from its joint: the body and head, two arms (from the shoulder), two legs (hip).
+const Rgb kCookie = {178, 104, 46}, kIcing = {250, 250, 252}, kGumRed = {214, 36, 48}, kGumGreen = {44, 168, 70}, kChoc = {52, 30, 20};
+const float kHipY = 92, kShoulderY = 156, kHipX = 15, kShoulderX = 26;
+void gingerBody(Mesh& m)
+{
+	m.cylinder(v(0, kHipY - 12, 0), v(0, kShoulderY + 6, 0), 27, 25, kCookie, 16);
+	m.sphere(v(0, kHipY - 10, 0), 27, kCookie, 14, 8);
+	m.sphere(v(0, kShoulderY + 4, 0), 25, kCookie, 14, 8);
+	m.sphere(v(0, kShoulderY + 36, 0), 27, kCookie, 16, 10);         // the head
+	for (int s = -1; s <= 1; s += 2) {                                 // chocolate eyes, an icing smile
+		m.sphere(v(9.0f * s, kShoulderY + 42, 25), 4.5f, kChoc, 8, 6);
+	}
+	for (int i = 0; i < 5; i++) {
+		float t = (i - 2) / 2.0f;
+		m.sphere(v(12 * t, kShoulderY + 26 - 4 * (1 - t * t), 25.5f), 2.6f, kIcing, 6, 4);
+	}
+	for (int i = 0; i < 3; i++)                                        // gumdrop buttons
+		m.sphere(v(0, kHipY + 14 + 22.0f * i, 26), 5.5f, i == 1 ? kGumGreen : kGumRed, 10, 6);
+	std::vector<V> c;                                                  // an icing zigzag round the neck
+	std::vector<float> r;
+	for (int i = 0; i <= 16; i++) {
+		float a = kPi * (0.15f + 0.7f * i / 16);
+		c.push_back(v(-26 * cosf(a), kShoulderY + 10 + (i % 2 ? 3.0f : -3.0f), 26 * sinf(a)));
+		r.push_back(1.8f);
+	}
+	m.tube(c, r, kIcing, 6, false);
+}
+// an arm hanging from its shoulder (at the origin), down and a little out: side -1 left, +1 right
+void gingerArm(Mesh& m, int side)
+{
+	V hand = v(14.0f * side, -66, 0);
+	m.cylinder(v(0, 0, 0), hand, 12, 10, kCookie, 12);
+	m.sphere(v(0, 0, 0), 12, kCookie, 10, 6);
+	m.sphere(hand, 11, kCookie, 10, 6);
+	for (int k = -1; k <= 1; k++)                                      // an icing cuff
+		m.sphere(add(mul(hand, 0.78f), v(4.0f * k, 0, 10)), 2.4f, kIcing, 6, 4);
+}
+// a leg from the hip (at the origin) to a round foot
+void gingerLeg(Mesh& m, int side)
+{
+	V foot = v(5.0f * side, -kHipY + 12, 0);
+	m.cylinder(v(0, 0, 0), foot, 14, 13, kCookie, 12);
+	m.sphere(foot, 14, kCookie, 10, 6);
+	for (int k = -1; k <= 1; k++)
+		m.sphere(add(mul(foot, 0.8f), v(4.5f * k, 0, 12)), 2.6f, kIcing, 6, 4);
+}
+
 // Rudolph's antlers, ears and nose. Made in Yoshi's model's own rest pose (yoshi_model.bmd: x his left,
 // y up, z forward; feet at 0, the top of his head at about 168, the tip of his snout at z 63, its nose
 // point null_nose at 0 144 56), then put into his head joint's frame ("jnt_head", at 0 101 0 at rest:
@@ -941,6 +991,16 @@ struct ChristmasAdditions : sms::Mod {
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	std::set<SmsObject> bare;           // Piantas whose own hat and leaf hair are off under the Santa hat, this stage
+	// gingerbread men: where each started (the level's marker), where he is, which way he faces, where he goes
+	struct Ginger {
+		V home, at, target;
+		float yaw = 0, phase = 0, wait = 0, wave = 0;
+		unsigned seed = 1;
+	};
+	std::vector<Ginger> gingers;
+	int gingerLooks = 0;
+	double gingerClock = -1;
+	SmsMesh gBody = 0, gArm[2] = {}, gLeg[2] = {};
 	std::set<SmsObject> baubled;        // Bob-omb baubles tinted, this stage
 	SmsMesh baubleCapMesh = 0, baublePat[5][4] = {};
 	bool baubleLogged = false;
@@ -1486,6 +1546,124 @@ struct ChristmasAdditions : sms::Mod {
 			askIce(false);
 	}
 
+	// Gingerbread men: found once a stage (its markers), then each wanders round where he started: a spot
+	// picked within 7 m, walked to at a brisk pace (kept out of walls, on the ground), a pause, the next.
+	// Mario close by: he stops, turns to him and waves.
+	static float frand(unsigned& s)
+	{
+		s = s * 1103515245u + 12345u;
+		return ((s >> 8) & 0xFFFF) / 65535.0f;
+	}
+	void gingerbread(const SmsPlayer& p)
+	{
+		const double t = api().core->time();
+		float dt = gingerClock < 0 ? 0.0f : (float)(t - gingerClock);
+		gingerClock = t;
+		if (dt > 0.1f)
+			dt = 0.1f;
+		if (gingers.empty() && gingerLooks < 8 && game().find_object && game().object_position) {
+			gingerLooks++;
+			for (int i = 0; i < 32; i++) {
+				char name[24];
+				snprintf(name, sizeof name, "Gingerbread %d", i);
+				SmsObject o = game().find_object(name);
+				SmsVec3 at;
+				if (!o || !game().object_position(o, &at))
+					continue;
+				Ginger g;
+				g.home = g.at = g.target = v(at.x, at.y, at.z);
+				g.seed = 977u * (unsigned)(i + 1);
+				g.yaw  = frand(g.seed) * 2 * kPi;
+				g.wait = frand(g.seed) * 2;
+				gingers.push_back(g);
+			}
+			if (!gingers.empty()) {
+				gingerLooks = 99;
+				info("%d gingerbread men", (int)gingers.size());
+			}
+		}
+		for (size_t i = 0; i < gingers.size(); i++) {
+			Ginger& g = gingers[i];
+			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z;
+			const bool close = mdx * mdx + mdz * mdz < 380.0f * 380.0f && fabsf(p.position.y - g.at.y) < 300;
+			float speed = 0;
+			if (close) { // turned to Mario, waving
+				float want = atan2f(mdx, mdz), d = want - g.yaw;
+				while (d > kPi) d -= 2 * kPi;
+				while (d < -kPi) d += 2 * kPi;
+				g.yaw += d * (dt * 6 < 1 ? dt * 6 : 1);
+				g.wave += dt * 9;
+			} else if (g.wait > 0) {
+				g.wait -= dt;
+			} else {
+				float dx = g.target.x - g.at.x, dz = g.target.z - g.at.z, d = sqrtf(dx * dx + dz * dz);
+				if (d < 30) { // there: a pause, and somewhere else
+					g.wait = 0.8f + frand(g.seed) * 2.5f;
+					float a = frand(g.seed) * 2 * kPi, r = 150 + frand(g.seed) * 550;
+					g.target = v(g.home.x + r * sinf(a), g.home.y, g.home.z + r * cosf(a));
+				} else {
+					float want = atan2f(dx, dz), dy = want - g.yaw;
+					while (dy > kPi) dy -= 2 * kPi;
+					while (dy < -kPi) dy += 2 * kPi;
+					g.yaw += dy * (dt * 4 < 1 ? dt * 4 : 1);
+					speed = fabsf(dy) < 1.0f ? 230.0f : 60.0f;
+					SmsVec3 want3 = {g.at.x + sinf(g.yaw) * speed * dt, g.at.y + 60, g.at.z + cosf(g.yaw) * speed * dt}, out = want3;
+					if (game().out_of_walls)
+						game().out_of_walls(&want3, 40.0f, &out, nullptr);
+					const float moved = (out.x - g.at.x) * (out.x - g.at.x) + (out.z - g.at.z) * (out.z - g.at.z);
+					if (moved < (speed * dt * 0.3f) * (speed * dt * 0.3f)) { // a wall in the way: somewhere else
+						g.target = g.home;
+						g.wait   = 0.5f;
+					}
+					g.at.x = out.x, g.at.z = out.z;
+					SmsGround gr;
+					memset(&gr, 0, sizeof gr);
+					gr.size = sizeof gr;
+					SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
+					if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
+						g.at.y = gr.floor;
+				}
+				g.wave = 0;
+			}
+			g.phase += dt * speed * 0.045f;
+			drawGinger(g, speed);
+		}
+	}
+	void drawGinger(const Ginger& g, float speed)
+	{
+		const float s = 1.0f, thin = 0.42f;                 // his size; how thick a cookie is
+		const V right = v(cosf(g.yaw), 0, -sinf(g.yaw)), up = v(0, 1, 0), fwd = v(sinf(g.yaw), 0, cosf(g.yaw));
+		const float swing = speed > 1 ? 0.55f * sinf(g.phase) : 0.0f;
+		const float bob = speed > 1 ? 4.0f * fabsf(sinf(g.phase)) : 0.0f;
+		// a piece's frame: its own x, y, z turned about x (a swing forward and back) and z (out to the side)
+		auto frame = [&](float m[3][4], V at, float swingX, float outZ) {
+			float cx = cosf(swingX), sx = sinf(swingX), cz = cosf(outZ), sz = sinf(outZ);
+			V ax = add(mul(right, cz), mul(up, sz));
+			V ay = add(mul(up, cz * cx), add(mul(right, -sz * cx), mul(fwd, sx)));
+			V az = sub(mul(fwd, cx), mul(add(mul(up, cz), mul(right, -sz)), sx));
+			ax = mul(ax, s), ay = mul(ay, s), az = mul(az, s * thin);
+			m[0][0] = ax.x, m[0][1] = ay.x, m[0][2] = az.x, m[0][3] = at.x;
+			m[1][0] = ax.y, m[1][1] = ay.y, m[1][2] = az.y, m[1][3] = at.y;
+			m[2][0] = ax.z, m[2][1] = ay.z, m[2][2] = az.z, m[2][3] = at.z;
+		};
+		float m[3][4];
+		const V base = add(g.at, v(0, bob, 0));
+		frame(m, base, 0, 0);
+		draw(gBody, m);
+		for (int side = 0; side < 2; side++) {
+			const float sgn = side ? 1.0f : -1.0f;
+			V hip = add(base, add(mul(right, kHipX * sgn * s), mul(up, kHipY * s)));
+			frame(m, hip, swing * (side ? 1 : -1), 0);
+			draw(gLeg[side], m);
+			V shoulder = add(base, add(mul(right, kShoulderX * sgn * s), mul(up, kShoulderY * s)));
+			float armSwing = -swing * 0.8f * (side ? 1 : -1), armOut = 0;
+			if (g.wave > 0 && side == 1) // his right arm up, waving
+				armSwing = 0, armOut = 2.5f + 0.35f * sinf(g.wave);
+			frame(m, shoulder, armSwing, armOut);
+			draw(gArm[side], m);
+		}
+	}
+
 	void tick()
 	{
 		{
@@ -1542,6 +1720,9 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
+		if (setting("gingerbread", 1))
+			gingerbread(p);
+
 		// Bob-omb baubles: each its own colour (the whole Bob-omb tinted, shading kept), a cap and loop on top
 		// and one of five patterns, picked by its number
 		if (setting("baubles", 1)) {
@@ -1664,6 +1845,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
 		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
+		optionBool("gingerbread", "Gingerbread men walk about where a level puts them", true);
 		optionBool("baubles", "Bob-ombs a level names Bauble look like Christmas baubles", true);
 		// FLUDD Weapons loading (now or later): told again
 		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
@@ -1731,6 +1913,15 @@ struct ChristmasAdditions : sms::Mod {
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
+		gBody   = make(gingerBody);
+		{
+			Mesh a0, a1, l0, l1;
+			gingerArm(a0, -1), gingerArm(a1, 1), gingerLeg(l0, -1), gingerLeg(l1, 1);
+			gArm[0] = api().models->create(handle(), &a0.corners[0], (int)a0.corners.size());
+			gArm[1] = api().models->create(handle(), &a1.corners[0], (int)a1.corners.size());
+			gLeg[0] = api().models->create(handle(), &l0.corners[0], (int)l0.corners.size());
+			gLeg[1] = api().models->create(handle(), &l1.corners[0], (int)l1.corners.size());
+		}
 		{
 			Mesh cap;
 			baubleCap(cap);
@@ -1747,7 +1938,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(); }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), gingers.clear(), gingerLooks = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
