@@ -42,7 +42,7 @@
 #define SMS_MOD_API_MAJOR 1
 #define SMS_MOD_API_MINOR 8
 /* 0 in a release; N in the pre-release vMAJOR.MINOR.0-beta.N (API 1.5) */
-#define SMS_MOD_API_PRERELEASE 1
+#define SMS_MOD_API_PRERELEASE 3
 #define SMS_MOD_API_VERSION ((uint32_t)SMS_MOD_API_MAJOR << 16 | SMS_MOD_API_MINOR)
 
 #if defined(_WIN32)
@@ -140,7 +140,9 @@ typedef enum SmsEventType {
 	   changed (scripted play, input remapping). SmsEvPadRead. */
 	SMS_EV_PAD_READ = 12,
 	/* A key went down or up in the game's window. Consumable: consume it and
-	   neither later mods nor the game's controls see it. SmsEvKey. */
+	   neither later mods nor the game's controls see it (a key let go still
+	   reaches the game's controls, API 1.8 beta 3, so none is left held there).
+	   SmsEvKey. */
 	SMS_EV_KEY = 13,
 	/* A camera cutscene was asked for. SmsEvCutscene. */
 	SMS_EV_CUTSCENE = 14,
@@ -847,12 +849,14 @@ typedef struct SmsEvShineSetup {
 	const char* model;
 } SmsEvShineSetup;
 
-/* SmsEvItemSetup.game_model (API 1.8): another coin's model, from the
-   stage's files. A stage that lacks the file leaves the coin's own. */
+/* SmsEvItemSetup.game_model (API 1.8): another coin's model, or (beta 3) a
+   Shine's, from the stage's files. A stage that lacks the file leaves the
+   coin's own. */
 #define SMS_GAME_MODEL_NONE      0 /* the coin's own (or `model`) */
 #define SMS_GAME_MODEL_COIN      1
 #define SMS_GAME_MODEL_RED_COIN  2
 #define SMS_GAME_MODEL_BLUE_COIN 3
+#define SMS_GAME_MODEL_SHINE     4 /* (API 1.8 beta 3) the Shine's; its effects: game->object_particle */
 
 /* SMS_EV_ITEM_SETUP (API 1.8) */
 typedef struct SmsEvItemSetup {
@@ -871,13 +875,15 @@ typedef struct SmsEvItemSetup {
 	   of the mod's: a path relative to the mod's folder (core->mod_dir), or
 	   a full one; a model that cannot be loaded leaves the game's. Coins
 	   play no animation of their own (the game turns them), so a model
-	   that shows without one will do (a 1-up mushroom's does; the game's
-	   Shine model does not show on a coin). Several items may name the
-	   same file: it is loaded once a stage. */
+	   that shows without one will do (a 1-up mushroom's, a Shine's). Its
+	   joints are placed as the model's file has them (from API 1.8 beta 3;
+	   before, only the first, so only a one-joint model showed whole), and
+	   game->object_particle puts effects on them. Several items may name
+	   the same file: it is loaded once a stage. */
 	const char* model;
-	/* Or another coin's model (SMS_GAME_MODEL_*), so a mod need not carry
-	   the game's files: a blue coin that holds something drawn as a red
-	   coin, say. `model` comes first when both are set. Changeable. */
+	/* Or another coin's model, or a Shine's (SMS_GAME_MODEL_*), so a mod
+	   need not carry the game's files: a blue coin that holds something
+	   drawn as a red coin, say. `model` comes first when both are set. Changeable. */
 	int game_model;
 } SmsEvItemSetup;
 
@@ -1163,7 +1169,8 @@ typedef struct SmsGameApi {
 	   make of that colour; a model's own colour animation sets it again as
 	   it plays (set it every tick to keep it). The colours are the model's:
 	   every object of the same model shares them (all the Shines given the
-	   same model file, say). 0 when the object has no model. */
+	   same model file, say). 0 when the object has no model (yet: a coin
+	   at SMS_EV_ITEM_SETUP; it crashed the game before API 1.8 beta 3). */
 	int (*object_set_color)(SmsObject obj, int which, SmsColor color);
 	/* API 1.8: one object drawn in a colour (0xRRGGBBAA), however its model
 	   is shared: its shading kept (a mid-grey part takes the colour as it
@@ -1171,11 +1178,16 @@ typedef struct SmsGameApi {
 	   towards it (0 off, 255 fully). Every part of its model, its
 	   reflections too; its particles are not. Kept until it is set again
 	   or the stage changes, whatever the model's colour animations do.
-	   0 when the object has no model. */
+	   An actor that has not made its model yet (a coin at
+	   SMS_EV_ITEM_SETUP) takes the colour once it has (API 1.8 beta 3; it
+	   crashed the game before). 0 when the object has no model and is no
+	   actor. */
 	int (*object_set_tint)(SmsObject obj, SmsColor color);
 	/* API 1.8: one of the game's particle effects (its number, as the
 	   game's PARTICLE_* in the decomp's Particles.hpp, docs/MODDING.md) at
-	   a point, as the game plays them. 1 played. */
+	   a point, as the game plays them. 1 played. The game's lasting effects
+	   (253 to 466, 486 to 504) are kept by their owner, so for them use
+	   object_particle: played here one may go on for good. */
 	int (*particle)(uint32_t id, const SmsVec3* at);
 	/* API 1.8: the stage's map (its walls, floors, roofs) between a and b:
 	   1 and where it first meets it into hit (may be NULL), 0 clear. */
@@ -1198,6 +1210,19 @@ typedef struct SmsGameApi {
 	   keeps Mario: where it is put (`out`) and the wall's way out (`normal`, may be NULL). 1 when a
 	   wall moved it, 0 not (out is at). */
 	int (*out_of_walls)(const SmsVec3* at, float radius, SmsVec3* out, SmsVec3* normal);
+	/* (API 1.8 beta 3; check size) One of the game's particle effects on an
+	   object, following it as it moves, as the game puts its own on its
+	   actors: at its model's joint `joint` (0 its first; a Shine's model has
+	   its effects on joint 2), or -1 at its position. The game's lasting
+	   effects (PARTICLE_* 253 to 466 and 486 to 504: a Shine's
+	   MS_SHINE_SENKO, _KIRA, _PROMI, _BOW, say) go on only while asked for:
+	   ask every tick (SMS_EV_TICK) to keep one, stop and it goes. Each such
+	   effect is on 32 objects at most at once (the game's own among them),
+	   and none on an object out of view (it starts again when seen). Any
+	   other effect plays once from the object, following it. 1 played or
+	   kept, 0 not: no such actor or joint, the actor gone or hidden, the
+	   effect not in this stage, or no room for it. */
+	int (*object_particle)(SmsObject obj, uint32_t id, int joint);
 } SmsGameApi;
 
 /* game->object_set_color's `which` (API 1.5) */
@@ -1302,7 +1327,7 @@ typedef struct SmsPlayerApi {
 /* player->set_hidden_parts (API 1.5) */
 #define SMS_PLAYER_PART_HEAD  1u /* his head: face, hair and cap */
 #define SMS_PLAYER_PART_FLUDD 2u /* FLUDD (it still sprays) */
-#define SMS_PLAYER_PART_CAP   4u /* (Remastered) his cap, or the hair drawn without it, left out in every view (not
+#define SMS_PLAYER_PART_CAP   4u /* his cap, or the hair drawn without it, left out in every view (not
                                       the diving helmet): a hat of a mod's own in its place */
 
 typedef struct SmsCamera {
@@ -1409,7 +1434,12 @@ typedef struct SmsInputApi {
 	int (*bind_key)(SmsMod* mod, const char* action, const char* default_key);
 	/* Take the controllers and keyboard from the game while a menu is open:
 	   the game sees nothing pressed and keys reach only you. Returns 0 if
-	   another mod has them. Release with on = 0. */
+	   another mod has them. Release with on = 0. A menu read with key_down
+	   without it shares the keys with the game: they move Mario and work
+	   its menus (a key of a game control: the arrows, Enter's Start), and
+	   split-screen co-op takes them for the keyboard player's, player 1;
+	   keys pressed while captured are neither. Keys let go still reach the
+	   game (API 1.8 beta 3), so a key held as the menu opens is not left held. */
 	int (*capture)(SmsMod* mod, int on);
 	/* The id of the mod that has them, or NULL. */
 	const char* (*captured_by)(void);
@@ -2258,99 +2288,13 @@ enum {
 	SMS_BLEND_ADD = 2    /* added to what is behind it: light, glow, flames */
 };
 
-/* ------------------------------------------------------------------ reflections (combined-plus) */
-
-/* api->reflections (SMS_API_HAS(api, reflections)): the port's puddle and
- * water effects. FLUDD's puddles that last longer; characters, objects and the
- * stage itself in puddles and water; ripples, sun glints, blur, deep water,
- * wet footprints. The game draws them; a mod only sets how. Every option starts
- * as the original game has it, and goes back so when the mod that set it is
- * unloaded (switched off in the Mods menu, or at exit). Options marked "next
- * area" take effect as the next area loads. */
-typedef enum SmsReflectOption {
-	SMS_REFLECT_PUDDLE_LIFETIME = 0, /* 1 (the game) to 8: FLUDD's puddles last as many times longer */
-	SMS_REFLECT_PUDDLES = 1,         /* 0 Mario, FLUDD and Yoshi only (the game); 1 everything. Next area */
-	SMS_REFLECT_DISTANCE = 2,        /* 500 to 5000 units around Mario that reflections are drawn over (1000) */
-	SMS_REFLECT_WATER = 3,           /* 1 the sea, lakes, pools, fountains, streams and wet ground reflect too */
-	SMS_REFLECT_BEAT_MIRRORS = 4,    /* 1 in a real mirror's area, a puddle near Mario reflects, not the mirror */
-	SMS_REFLECT_LEVEL = 5,           /* 1 the stage itself (ground, buildings, sky) is reflected. Next area */
-	SMS_REFLECT_VIEW_ANGLE = 6,      /* 0 off, 1 subtle, 2 realistic: stronger looking across, weaker down */
-	SMS_REFLECT_PUDDLE_RIPPLES = 7,  /* 0 off, 1 gentle, 2 strong: new puddles and steps ripple, calming in 2 s */
-	SMS_REFLECT_WATER_RIPPLES = 8,   /* 0 off, 1 gentle, 2 strong: the reflection in water wobbles */
-	SMS_REFLECT_SUN_GLINTS = 9,      /* 0 off, 1 subtle, 2 bright */
-	SMS_REFLECT_WATER_DEPTH = 10,    /* 0 off, 1 subtle, 2 strong: water darkens over deep ground */
-	SMS_REFLECT_BLUR = 11,           /* 0 sharp to 1000, hundredths (125 is 1.25) */
-	SMS_REFLECT_FOOTPRINTS = 12,     /* 1 after a puddle, Mario's steps leave damp prints that dry away */
-	/* What is reflected, 1 or 0. All but Mario need SMS_REFLECT_PUDDLES 1 */
-	SMS_REFLECT_SHOW_MARIO = 13,      /* Mario, FLUDD and Yoshi (1, the game) */
-	SMS_REFLECT_SHOW_CHARACTERS = 14, /* Piantas, Nokis and other people */
-	SMS_REFLECT_SHOW_ENEMIES = 15,    /* enemies and bosses */
-	SMS_REFLECT_SHOW_ITEMS = 16,      /* fruit and other things to take */
-	SMS_REFLECT_SHOW_OBJECTS = 17,    /* crates, trees, doors and the rest */
-	SMS_REFLECT_BY_SURFACE = 18,      /* 1 each puddle as strong as its floor's strength below; 0 all alike */
-	/* Strengths, in tenths of a percent of the game's own (0 to 1000) */
-	SMS_REFLECT_STRENGTH_STONE = 19,  /* stone tiles, carpets and other floors (300) */
-	SMS_REFLECT_STRENGTH_METAL = 20,  /* metal roofs, manhole covers (500) */
-	SMS_REFLECT_STRENGTH_CLAY = 21,   /* clay roof tiles (400) */
-	SMS_REFLECT_STRENGTH_WOOD = 22,   /* wooden boardwalks (330) */
-	SMS_REFLECT_STRENGTH_SAND = 23,   /* (50) */
-	SMS_REFLECT_STRENGTH_GRASS = 24,  /* (60) */
-	SMS_REFLECT_STRENGTH_CANVAS = 25, /* canvas awnings (100) */
-	SMS_REFLECT_STRENGTH_WET = 26,    /* wet, slippery floors (550) */
-	SMS_REFLECT_STRENGTH_WATER = 27,  /* the stage's water, with SMS_REFLECT_WATER (500) */
-	SMS_REFLECT_STRENGTH_WET_GROUND = 28, /* wet ground itself, with SMS_REFLECT_WATER (450) */
-	SMS_REFLECT_WET_MARIO = 29,       /* 1 water leaves Mario wet up to where it reached: darker, with a
-	                                     small highlight, dripping, drying over about 45 seconds */
-	SMS_REFLECT_OPTION_COUNT = 30     /* grows with the API: check range() */
-} SmsReflectOption;
-
-typedef struct SmsReflectionsApi {
-	uint32_t size;
-	/* Sets an option (SMS_REFLECT_*), the value clamped to its range.
-	   Returns 0 for an option this game does not have. */
-	int (*set)(SmsMod* mod, int option, int value);
-	/* The option's value now (whoever set it), or -1 if the game has none */
-	int (*get)(int option);
-	/* Its lowest, highest and the original game's value (each may be NULL);
-	   returns 0 for an option this game does not have. */
-	int (*range)(int option, int* min, int* max, int* original);
-} SmsReflectionsApi;
-
-/* ------------------------------------------------------------------ grass (Remastered) */
-
-/* api->grass (SMS_API_HAS(api, grass), and check its magic): Super Mario Sunshine
- * Remastered's 3D Grass, for a mod's own effects on it. Nothing here does
- * anything by itself, or with 3D Grass off. A mod built with another SDK finds
- * the table right after `reflections` (two pointers after `models`). */
-#define SMS_GRASS_MAGIC 0x53524747u /* "GGRS" */
-typedef struct SmsGrassApi {
-	uint32_t size;
-	uint32_t magic; /* SMS_GRASS_MAGIC */
-	/* The blades within `r` of (x, z) pressed flat, as FLUDD's spray leaves
-	   them; they rise again by themselves, so call it each tick they should
-	   stay down. */
-	void (*press)(float x, float y, float z, float r);
-	/* The blades within `r` burnt away (gone in a little over a second of
-	   calls; `ms` is the time since the last call), growing back over a minute
-	   and a half; and the grass at its edge set alight: the fire runs on
-	   through the grass by itself and stops where the grass does. */
-	void (*burn)(float x, float y, float z, float r, int ms);
-	/* 1 while the grass at (x, z) is on fire */
-	int (*burning)(float x, float z);
-	/* The burning places (x, y, z each) into `out`, at most `most`, spread
-	   over all of them; returns how many were written. With out NULL, how
-	   many places burn. */
-	int (*fires)(float* out, int most);
-	/* The grass fire within `r` of (x, z) put out */
-	void (*extinguish)(float x, float z, float r);
-} SmsGrassApi;
-
-/* ------------------------------------------------------------------ a model's parts (Remastered) */
+/* ------------------------------------------------------------------ a model's parts */
 
 /* api->parts (SMS_API_HAS(api, parts), and check its magic): an actor's model by its parts, for a
  * mod's own things worn or held (models->draw at a joint) and colours of its own on one part.
- * Works on any actor with a model (characters, enemies, items). A mod built with another SDK finds
- * the table right after `grass` (three pointers after `models`). */
+ * Works on any actor with a model (characters, enemies, items). The table comes right after
+ * `models`; a build with other tables between (Remastered: reflections and grass) has it later, so a
+ * mod for both looks for its magic in the pointers after `models`. */
 #define SMS_PARTS_MAGIC 0x53545250u /* "PRTS" */
 typedef struct SmsPartsApi {
 	uint32_t size;
@@ -2428,9 +2372,7 @@ struct SmsApi {
 	const SmsWaterApi* water;       /* API 1.8 (SMS_API_HAS(api, water)) */
 	const SmsActorApi* actor;       /* API 1.8 (SMS_API_HAS(api, actor)) */
 	const SmsModelApi* models;      /* API 1.8 (SMS_API_HAS(api, models)) */
-	const SmsReflectionsApi* reflections; /* combined-plus (SMS_API_HAS(api, reflections)) */
-	const SmsGrassApi* grass;       /* Remastered (SMS_API_HAS(api, grass); check its magic) */
-	const SmsPartsApi* parts;       /* Remastered (SMS_API_HAS(api, parts); check its magic) */
+	const SmsPartsApi* parts;       /* (SMS_API_HAS(api, parts); check its magic) */
 };
 
 /* ------------------------------------------------------------------ the mod's side */
