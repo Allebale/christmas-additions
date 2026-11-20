@@ -40,5 +40,5 @@ Next, in order:
 - **Ice weapon**: when Christmas Additions is installed, the FLUDD Weapons mod's black goop weapon becomes
   an ice weapon, its textures white-blueish ice. Must stay a mod change (Chase's rule); the two mods are
   separate, so Christmas Additions has to find and retexture the goop weapon's look itself, or FLUDD
-  Weapons offers a general hook for it. Ask whether it should also behave like ice (freeze, slippery)
-  or only look icy.
+  Weapons offers a general hook for it. It must also act like ice (Allebale, Nov 20): enemies it hits
+  freeze, and the floor it lands on turns slippery.
