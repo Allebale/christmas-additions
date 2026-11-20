@@ -2225,7 +2225,7 @@ struct ChristmasAdditions : sms::Mod {
 			g.speed = 0;
 			if (g.chasing) {
 				if (d2 > 75.0f * 75.0f) // the water slows him, but he keeps coming
-					gingerStep(g, p.position.x, p.position.z, g.hurt > 0 ? 130.0f : 330.0f, g.hurt > 0 ? 3.0f : 6.0f, dt);
+					gingerStep(g, p.position.x, p.position.z, g.hurt > 0 ? 200.0f : 540.0f, g.hurt > 0 ? 3.0f : 7.0f, dt);
 				else
 					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
 				// close: a swing at him (his right arm), once in a while
