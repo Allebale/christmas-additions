@@ -1005,7 +1005,9 @@ struct ChristmasAdditions : sms::Mod {
 	// gingerbread men: where each started (the level's marker), where he is, which way he faces, where he goes
 	struct Ginger {
 		V home, at, target;
-		float yaw = 0, phase = 0, wait = 0, wave = 0;
+		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
+		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
+		bool chasing = false;
 		unsigned seed = 1;
 	};
 	std::vector<Ginger> gingers;
@@ -1559,13 +1561,38 @@ struct ChristmasAdditions : sms::Mod {
 			askIce(false);
 	}
 
-	// Gingerbread men: found once a stage (its markers), then each wanders round where he started: a spot
-	// picked within 7 m, walked to at a brisk pace (kept out of walls, on the ground), a pause, the next.
-	// Mario close by: he stops, turns to him and waves.
+	// Gingerbread men: found once a stage (its markers), then each wanders round where he started (a spot
+	// picked within 7 m, walked to, a pause, the next). Mario within 12 m: he runs after him, and close enough
+	// he swings at him (a point of health and a knock back, then a moment before he can again). Jumped on,
+	// he crumbles, and is back where he started half a minute later. Mario far off again: he walks home.
 	static float frand(unsigned& s)
 	{
 		s = s * 1103515245u + 12345u;
 		return ((s >> 8) & 0xFFFF) / 65535.0f;
+	}
+	// a step his way, kept out of walls and on the ground: false when a wall stopped him
+	bool gingerStep(Ginger& g, float tx, float tz, float speed, float turn, float dt)
+	{
+		float dx = tx - g.at.x, dz = tz - g.at.z;
+		float want = atan2f(dx, dz), dy = want - g.yaw;
+		while (dy > kPi) dy -= 2 * kPi;
+		while (dy < -kPi) dy += 2 * kPi;
+		g.yaw += dy * (dt * turn < 1 ? dt * turn : 1);
+		if (fabsf(dy) > 1.0f)
+			speed *= 0.3f;
+		g.speed = speed;
+		SmsVec3 want3 = {g.at.x + sinf(g.yaw) * speed * dt, g.at.y + 60, g.at.z + cosf(g.yaw) * speed * dt}, out = want3;
+		if (game().out_of_walls)
+			game().out_of_walls(&want3, 40.0f, &out, nullptr);
+		const float moved = (out.x - g.at.x) * (out.x - g.at.x) + (out.z - g.at.z) * (out.z - g.at.z);
+		g.at.x = out.x, g.at.z = out.z;
+		SmsGround gr;
+		memset(&gr, 0, sizeof gr);
+		gr.size = sizeof gr;
+		SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
+		if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
+			g.at.y = gr.floor;
+		return moved >= (speed * dt * 0.3f) * (speed * dt * 0.3f);
 	}
 	void gingerbread(const SmsPlayer& p)
 	{
@@ -1595,51 +1622,69 @@ struct ChristmasAdditions : sms::Mod {
 				info("%d gingerbread men", (int)gingers.size());
 			}
 		}
+		const bool fierce  = setting("gingerbread_chase", 1) != 0;
+		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
 		for (size_t i = 0; i < gingers.size(); i++) {
 			Ginger& g = gingers[i];
-			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z;
-			const bool close = mdx * mdx + mdz * mdz < 380.0f * 380.0f && fabsf(p.position.y - g.at.y) < 300;
-			float speed = 0;
-			if (close) { // turned to Mario, waving
-				float want = atan2f(mdx, mdz), d = want - g.yaw;
-				while (d > kPi) d -= 2 * kPi;
-				while (d < -kPi) d += 2 * kPi;
-				g.yaw += d * (dt * 6 < 1 ? dt * 6 : 1);
-				g.wave += dt * 9;
+			if (g.gone > 0) { // crumbled: back home after a while
+				g.gone -= dt;
+				if (g.gone <= 0)
+					g.at = g.target = g.home, g.chasing = false, g.wait = 1;
+				continue;
+			}
+			g.cool -= dt, g.swing -= dt;
+			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z, mdy = p.position.y - g.at.y;
+			const float d2 = mdx * mdx + mdz * mdz;
+			const float hx = g.at.x - g.home.x, hz = g.at.z - g.home.z;
+			// jumped on: Mario coming down onto his head
+			if (fierce && d2 < 70.0f * 70.0f && mdy > 120 && mdy < 260 && p.velocity.y < 0) {
+				g.gone = 30;
+				addPuff(add(g.at, v(0, 120, 0)), 60);
+				addPuff(add(g.at, v(0, 60, 0)), 50);
+				SmsVec3 up = p.velocity;
+				up.y = 28;
+				player().set_velocity(&up);
+				continue;
+			}
+			if (!g.chasing && fierce && d2 < 1200.0f * 1200.0f && fabsf(mdy) < 400)
+				g.chasing = true;
+			if (g.chasing && (!fierce || d2 > 1700.0f * 1700.0f || hx * hx + hz * hz > 2500.0f * 2500.0f || fabsf(mdy) > 700)) {
+				g.chasing = false; // too far from Mario, or from home: back
+				g.target  = g.home;
+				g.wait    = 0;
+			}
+			g.speed = 0;
+			if (g.chasing) {
+				if (d2 > 75.0f * 75.0f)
+					gingerStep(g, p.position.x, p.position.z, 330.0f, 6.0f, dt);
+				else
+					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
+				// close: a swing at him (his right arm), once in a while
+				if (d2 < 115.0f * 115.0f && fabsf(mdy) < 120 && g.cool <= 0) {
+					g.cool  = 1.6f;
+					g.swing = 0.35f;
+					if (canHurt && !p.invincible) {
+						player().hurt(1);
+						const float d = sqrtf(d2) > 1 ? sqrtf(d2) : 1;
+						SmsVec3 kb = {mdx / d * 22.0f, 20.0f, mdz / d * 22.0f};
+						player().set_velocity(&kb);
+					}
+				}
 			} else if (g.wait > 0) {
 				g.wait -= dt;
 			} else {
-				float dx = g.target.x - g.at.x, dz = g.target.z - g.at.z, d = sqrtf(dx * dx + dz * dz);
-				if (d < 30) { // there: a pause, and somewhere else
+				float dx = g.target.x - g.at.x, dz = g.target.z - g.at.z;
+				if (dx * dx + dz * dz < 30 * 30) { // there: a pause, and somewhere else
 					g.wait = 0.8f + frand(g.seed) * 2.5f;
 					float a = frand(g.seed) * 2 * kPi, r = 150 + frand(g.seed) * 550;
 					g.target = v(g.home.x + r * sinf(a), g.home.y, g.home.z + r * cosf(a));
-				} else {
-					float want = atan2f(dx, dz), dy = want - g.yaw;
-					while (dy > kPi) dy -= 2 * kPi;
-					while (dy < -kPi) dy += 2 * kPi;
-					g.yaw += dy * (dt * 4 < 1 ? dt * 4 : 1);
-					speed = fabsf(dy) < 1.0f ? 230.0f : 60.0f;
-					SmsVec3 want3 = {g.at.x + sinf(g.yaw) * speed * dt, g.at.y + 60, g.at.z + cosf(g.yaw) * speed * dt}, out = want3;
-					if (game().out_of_walls)
-						game().out_of_walls(&want3, 40.0f, &out, nullptr);
-					const float moved = (out.x - g.at.x) * (out.x - g.at.x) + (out.z - g.at.z) * (out.z - g.at.z);
-					if (moved < (speed * dt * 0.3f) * (speed * dt * 0.3f)) { // a wall in the way: somewhere else
-						g.target = g.home;
-						g.wait   = 0.5f;
-					}
-					g.at.x = out.x, g.at.z = out.z;
-					SmsGround gr;
-					memset(&gr, 0, sizeof gr);
-					gr.size = sizeof gr;
-					SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
-					if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
-						g.at.y = gr.floor;
+				} else if (!gingerStep(g, g.target.x, g.target.z, 200.0f, 4.0f, dt)) {
+					g.target = g.home; // a wall in the way: somewhere else
+					g.wait   = 0.5f;
 				}
-				g.wave = 0;
 			}
-			g.phase += dt * speed * 0.045f;
-			drawGinger(g, speed);
+			g.phase += dt * g.speed * 0.045f;
+			drawGinger(g, g.speed);
 		}
 	}
 	void drawGinger(const Ginger& g, float speed)
@@ -1670,8 +1715,8 @@ struct ChristmasAdditions : sms::Mod {
 			draw(gLeg[side], m);
 			V shoulder = add(base, add(mul(right, kShoulderX * sgn * s), mul(up, kShoulderY * s)));
 			float armSwing = -swing * 0.8f * (side ? 1 : -1), armOut = 0;
-			if (g.wave > 0 && side == 1) // his right arm up, waving
-				armSwing = 0, armOut = 2.5f + 0.35f * sinf(g.wave);
+			if (g.swing > 0 && side == 1) // his right arm swung at Mario: up and forward, then down
+				armSwing = -2.4f * (g.swing / 0.35f), armOut = 0.3f;
 			frame(m, shoulder, armSwing, armOut);
 			draw(gArm[side], m);
 		}
@@ -1870,6 +1915,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
 		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
 		optionBool("gingerbread", "Gingerbread men walk about where a level puts them", true);
+		optionBool("gingerbread_chase", "Gingerbread men chase and hit Mario (jump on them)", true);
 		optionBool("baubles", "Bob-ombs a level names Bauble look like Christmas baubles", true);
 		// FLUDD Weapons loading (now or later): told again
 		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
