@@ -2430,7 +2430,10 @@ struct ChristmasAdditions : sms::Mod {
 		if (g.dieKind == 2 && g.dying > 0.4f) // sliding down the wall
 			base.y -= 60.0f * (g.dying - 0.4f) * (g.dying - 0.4f) * 3.0f;
 		float bx = 0, bz = 0;
-		frame(m, fly(base, v(0, 0.3f, 0), 0.4f, 23.0f * sw, bx, bz), bx, bz);
+		// (fly first, on its own: it turns bx and bz, and a call's arguments may be read in any order, so passed
+		// alongside they were read before it, and the body never lay down; Allebale saw it standing in the air)
+		const V bodyAt = fly(base, v(0, 0.3f, 0), 0.4f, 23.0f * sw, bx, bz);
+		frame(m, bodyAt, bx, bz);
 		draw(gBody, m);
 		for (int side = 0; side < 2; side++) {
 			const float sgn = side ? 1.0f : -1.0f;
