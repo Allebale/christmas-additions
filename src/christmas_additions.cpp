@@ -1091,8 +1091,9 @@ struct ChristmasAdditions : sms::Mod {
 		V home, at, target;
 		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
 		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
-		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (3 melts him); trembling; his end so far
+		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (2 melt him); trembling; his end so far
 		float hiss = 0, dry = 0, drip = 0;   // till the next splash sound; till he starts drying off; next drip
+		V push = {0, 0, 0};                  // pushed by the water: how fast, which way (units a second)
 		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
 		bool chasing = false;
 		unsigned seed = 1;
@@ -2088,7 +2089,7 @@ struct ChristmasAdditions : sms::Mod {
 			if (g.gone > 0) { // crumbled: back home after a while
 				g.gone -= dt;
 				if (g.gone <= 0)
-					g.at = g.target = g.home, g.chasing = false, g.wait = 1, g.wet = 0;
+					g.at = g.target = g.home, g.chasing = false, g.wait = 1, g.wet = 0, g.push = v(0, 0, 0);
 				continue;
 			}
 			if (g.dying > 0) { // his end: drawn as it goes, then gone
@@ -2101,6 +2102,7 @@ struct ChristmasAdditions : sms::Mod {
 			}
 			// FLUDD's water on him: the game's flying drops passing through him (each used up on him)
 			bool hitNow = false;
+			float pushX = 0, pushZ = 0; // the way the water hitting him flies
 			const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
 			if (wa && wa->count && wa->get) {
 				const int nd = wa->count();
@@ -2116,6 +2118,11 @@ struct ChristmasAdditions : sms::Mod {
 					const float sp2 = wd.velocity.x * wd.velocity.x + wd.velocity.y * wd.velocity.y + wd.velocity.z * wd.velocity.z;
 					if (sp2 > 8.0f * 8.0f && ddx * ddx + ddz * ddz < 55.0f * 55.0f && ddy > 20 && ddy < 230) {
 						hitNow = true;
+						{
+							const float hv = sqrtf(wd.velocity.x * wd.velocity.x + wd.velocity.z * wd.velocity.z);
+							if (hv > 0.01f)
+								pushX += wd.velocity.x / hv, pushZ += wd.velocity.z / hv;
+						}
 						wd.alive = 0;
 						if (wa->set)
 							wa->set(k, &wd);
@@ -2135,13 +2142,36 @@ struct ChristmasAdditions : sms::Mod {
 				g.hurt = 0.25f;
 				g.dry  = 4.0f;
 				g.chasing = true;   // and he is cross
-				if (g.wet >= 3.0f) {
+				if (g.wet >= 2.0f) {
 					g.dying = 0.001f, g.dieKind = 1;
 					sound(0x283A, g.at); // MSD_SE_EN_MAMEGESO_MELT
 					addPuddle(g.at, 95, 25, 1.2f, kDough, 230, g.seed); // all of him, spreading as he goes down
 					info("a gingerbread man melted");
 					continue;
 				}
+			}
+			// the water pushing him back the way it flies (kept out of walls, on the ground), easing off once it stops
+			if (hitNow) {
+				const float pl = sqrtf(pushX * pushX + pushZ * pushZ);
+				if (pl > 0.01f) {
+					g.push.x += pushX / pl * 2600.0f * dt, g.push.z += pushZ / pl * 2600.0f * dt;
+					const float sp = sqrtf(g.push.x * g.push.x + g.push.z * g.push.z);
+					if (sp > 420.0f)
+						g.push = mul(g.push, 420.0f / sp);
+				}
+			}
+			if (g.push.x * g.push.x + g.push.z * g.push.z > 1.0f) {
+				SmsVec3 want3 = {g.at.x + g.push.x * dt, g.at.y + 60, g.at.z + g.push.z * dt}, out = want3;
+				if (game().out_of_walls)
+					game().out_of_walls(&want3, 40.0f, &out, nullptr);
+				g.at.x = out.x, g.at.z = out.z;
+				SmsGround gr;
+				memset(&gr, 0, sizeof gr);
+				gr.size = sizeof gr;
+				SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
+				if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
+					g.at.y = gr.floor;
+				g.push = mul(g.push, expf(-5.0f * dt));
 			}
 			g.hurt -= dt, g.hiss -= dt, g.dry -= dt, g.drip -= dt;
 			if (g.dry <= 0 && g.wet > 0) // left alone a while: he dries off again
@@ -2227,7 +2257,7 @@ struct ChristmasAdditions : sms::Mod {
 	{
 		float sy = 1.0f, sw = 1.0f;                         // his height and width, times his own
 		const float thin = 0.62f;                           // how thick a cookie is
-		const float soak = g.wet / 3.0f;                    // 0 dry, 1 melted
+		const float soak = g.wet / 2.0f;                    // 0 dry, 1 melted
 		sy -= 0.25f * soak, sw += 0.12f * soak;
 		float shake = g.hurt > 0 ? 4.0f * sinf(g.hurt * 70.0f) : 0.0f;
 		float burst = -1;                                   // jumped on: 0..1 through his falling apart
