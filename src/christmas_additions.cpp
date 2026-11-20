@@ -297,6 +297,49 @@ void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
 	}
 }
 
+// The bauble Bob-ombs' own parts (the mod's enemy: the game's Bob-omb is on no stage the launcher can copy from),
+// in the body's frame, its radius 1: x up, y forward, z to the side. Eight bauble colours, and white for its flash.
+const Rgb kBaubleBody[9] = {{200, 30, 40}, {47, 95, 208}, {35, 150, 75}, {230, 180, 60}, {140, 60, 180}, {210, 215, 225},
+                            {230, 90, 160}, {42, 170, 180}, {255, 250, 240}};
+const Rgb kBombFoot = {240, 168, 40};
+void bombFace(Mesh& m) // two big eyes, looking ahead
+{
+	for (int s = -1; s <= 1; s += 2) {
+		const V eye = onBall(v(0, 0, 0), 0.93f, 14, 21.0f * s);
+		m.sphere(eye, 0.2f, kWhite, 10, 8);
+		m.sphere(onBall(v(0, 0, 0), 1.08f, 12, 21.0f * s), 0.1f, kCoal, 8, 6);
+		m.sphere(onBall(v(0, 0, 0), 1.14f, 16, 19.0f * s), 0.03f, kWhite, 5, 4); // a glint
+	}
+}
+void bombFoot(Mesh& m) // a round shoe, toe forward
+{
+	std::vector<V> c;
+	std::vector<float> r;
+	c.push_back(v(0, -0.2f, 0)), r.push_back(0.16f);
+	c.push_back(v(0.02f, 0.05f, 0)), r.push_back(0.2f);
+	c.push_back(v(0, 0.3f, 0)), r.push_back(0.15f);
+	m.tube(c, r, kBombFoot, 10);
+}
+void bombKey(Mesh& m) // the wind-up key in its back, turning about y
+{
+	m.cylinder(v(0, -0.9f, 0), v(0, -1.32f, 0), 0.07f, 0.07f, kBaubleGold, 8);
+	for (int s = -1; s <= 1; s += 2) {
+		std::vector<V> c;
+		std::vector<float> r;
+		for (int i = 0; i <= 16; i++) {
+			float t = 2 * kPi * i / 16;
+			c.push_back(v(s * (0.27f + 0.2f * cosf(t)), -1.36f + 0.1f * sinf(t), 0));
+			r.push_back(0.05f);
+		}
+		m.tube(c, r, kBaubleGold, 6, false);
+	}
+}
+void bombShard(Mesh& m, Rgb col) // a curved bit of glass
+{
+	const V a = v(0, 0, 0), b = v(0.42f, 0.04f, 0), c = v(0.12f, 0.36f, 0.04f), d = v(0.16f, 0.12f, 0.12f);
+	m.tri(a, b, c, col), m.tri(a, c, d, col), m.tri(b, d, c, col), m.tri(a, d, b, col);
+}
+
 // Gingerbread men (the mod's own, walking about where a level marks with invisible coins named "Gingerbread N"):
 // a cookie figure in pieces that swing as he walks, tall and long-legged as Il Piantissimo. Built round
 // (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
@@ -990,6 +1033,17 @@ struct Puff {
 	V p;
 	float born, size;
 };
+struct Bomb { // a bauble Bob-omb
+	V home, at, target;
+	float yaw = 0, phase = 0, wait = 0, speed = 0, turn = 0; // turn: its key
+	float fuse = 0;     // lit: seconds left (0 not lit)
+	float wet = 0;      // put out by water: sitting it out
+	float boom = 0;     // exploding: seconds into it
+	float shatter = 0;  // jumped on: seconds into its glass flying apart
+	float gone = 0;     // till it is back home
+	int look = 0;       // colour and pattern
+	unsigned seed = 1;
+};
 struct Puddle { // left by a gingerbread man: spreading out, staying a while, then drying away
 	V p;
 	float born, size, life, yaw, grow;
@@ -1049,11 +1103,12 @@ struct ChristmasAdditions : sms::Mod {
 	float gingerRest = 0; // after any of them hits Mario: none swings again till this runs out
 	double gingerClock = -1;
 	SmsMesh gBody = 0, gArm[2] = {}, gLeg[2] = {};
-	std::set<SmsObject> baubled;        // Bob-omb baubles tinted, this stage
-	std::vector<std::pair<SmsObject, int> > baubles; // the level's Bob-omb baubles and their numbers, this stage
+	std::vector<Bomb> bombs;              // the level's bauble Bob-ombs, this stage
+	double bombClock = -1;
 	int baubleLooks = 0;
 	SmsMesh baubleCapMesh = 0, baublePat[5][4] = {};
-	bool baubleLogged = false;
+	SmsMesh bombBody[9] = {}, bombShards[9] = {}, bombFaceMesh = 0, bombFootMesh = 0, bombKeyMesh = 0;
+
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
@@ -1672,6 +1727,284 @@ struct ChristmasAdditions : sms::Mod {
 		SmsVec3 p = {at.x, at.y + 60, at.z};
 		game().object_set_position(gingerCoins[nextCoin++], &p);
 	}
+	// FLUDD's flying water passing through a round space at `at` (its drops used up on it): any this tick
+	bool sprayHit(V at, float rad, float lo, float hi)
+	{
+		const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
+		if (!wa || !wa->count || !wa->get)
+			return false;
+		bool hit = false;
+		const int nd = wa->count();
+		for (int k = 0; k < nd; k++) {
+			SmsWaterDrop wd;
+			memset(&wd, 0, sizeof wd);
+			wd.size = sizeof wd;
+			if (!wa->get(k, &wd) || wd.landed || wd.tag != 0)
+				continue;
+			const float sp2 = wd.velocity.x * wd.velocity.x + wd.velocity.y * wd.velocity.y + wd.velocity.z * wd.velocity.z;
+			const float dx = wd.position.x - at.x, dz = wd.position.z - at.z, dy = wd.position.y - at.y;
+			if (sp2 > 8.0f * 8.0f && dx * dx + dz * dz < rad * rad && dy > lo && dy < hi) {
+				hit = true;
+				wd.alive = 0;
+				if (wa->set)
+					wa->set(k, &wd);
+			}
+		}
+		return hit;
+	}
+	// Mario hit from `from`: a point of health, knocked off his feet away from it, facing it
+	void knockMario(const SmsPlayer& p, V from, float push, float up)
+	{
+		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
+		if (!canHurt || p.invincible)
+			return;
+		const float dx = p.position.x - from.x, dz = p.position.z - from.z;
+		player().hurt(1);
+		if (player().set_yaw)
+			player().set_yaw(atan2f(-dx, -dz) * 57.29578f);
+		if (player().set_status)
+			player().set_status(0x208B3, 0);
+		if (player().set_forward_speed)
+			player().set_forward_speed(-push);
+		SmsVec3 kb = p.velocity;
+		kb.y = up;
+		if (player().set_velocity)
+			player().set_velocity(&kb);
+	}
+	// a bauble's step, as a gingerbread man's (kept out of walls, on the ground): false when a wall stopped it
+	bool bombStep(Bomb& b, float tx, float tz, float speed, float turn, float dt)
+	{
+		Ginger g;
+		g.at = b.at, g.yaw = b.yaw;
+		const bool ok = gingerStep(g, tx, tz, speed, turn, dt);
+		b.at = g.at, b.yaw = g.yaw, b.speed = g.speed;
+		return ok;
+	}
+
+	// Bauble Bob-ombs (the mod's own enemy): found once a stage by their markers, invisible coins named "Bauble N".
+	// Each waddles round where it starts, its key turning. Mario near: its fuse lights (sparks at its loop, its
+	// glass flashing white, faster as it burns down) and it runs after him; the fuse out or him reached, it
+	// explodes (a point of health and a knock back within 3 m). Water puts the fuse out for a while. Jumped on,
+	// it shatters like a glass bauble and leaves a coin. Back where it started 25 s after either.
+	static constexpr float kBombR = 46, kBombFootY = 14; // its radius; how high its feet hold it
+	void bombsTick(const SmsPlayer& p)
+	{
+		const double t = api().core->time();
+		float dt = bombClock < 0 ? 0.0f : (float)(t - bombClock);
+		bombClock = t;
+		if (dt > 0.1f)
+			dt = 0.1f;
+		if (bombs.empty() && baubleLooks < 8 && game().find_object && game().object_position) {
+			baubleLooks++;
+			for (int i = 0; i < 64; i++) {
+				char name[24];
+				snprintf(name, sizeof name, "Bauble %d", i);
+				SmsObject o = game().find_object(name);
+				SmsVec3 at;
+				if (!o || !game().object_position(o, &at))
+					continue;
+				Bomb b;
+				b.home = b.at = b.target = v(at.x, at.y, at.z);
+				b.look = i;
+				b.seed = 7919u * (unsigned)(i + 3);
+				b.yaw  = frand(b.seed) * 2 * kPi;
+				b.wait = frand(b.seed) * 2;
+				bombs.push_back(b);
+			}
+			if (!bombs.empty()) {
+				baubleLooks = 99;
+				info("%d bauble Bob-ombs", (int)bombs.size());
+			}
+		}
+		if (bombs.empty())
+			return;
+		const bool fierce = setting("baubles_chase", 1) != 0;
+		SmsCamera cam;
+		memset(&cam, 0, sizeof cam);
+		cam.size = sizeof cam;
+		const bool haveCam = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
+		std::vector<SmsTexCorner> glow; // fire and sparks, added on top
+		for (size_t i = 0; i < bombs.size(); i++) {
+			Bomb& b = bombs[i];
+			const V mid = add(b.at, v(0, kBombFootY + kBombR, 0));
+			if (b.gone > 0) {
+				b.gone -= dt;
+				if (b.gone <= 0) { // back home, as new, with a puff
+					Bomb n;
+					n.home = n.at = n.target = b.home;
+					n.look = b.look, n.seed = b.seed + 1, n.yaw = b.yaw, n.wait = 1;
+					b = n;
+					addPuff(add(b.at, v(0, kBombR, 0)), 40);
+				}
+				continue;
+			}
+			if (b.boom > 0) { // exploding: a ball of fire swelling and fading, smoke puffs
+				b.boom += dt;
+				if (haveCam)
+					fireball(glow, cam, mid, b.boom);
+				if (b.boom > 0.7f)
+					b.boom = 0, b.gone = 25;
+				continue;
+			}
+			if (b.shatter > 0) { // its glass flying apart and falling
+				b.shatter += dt;
+				drawShatter(b);
+				if (b.shatter > 1.0f)
+					b.shatter = 0, b.gone = 25, dropCoin(b.at);
+				continue;
+			}
+			const float mdx = p.position.x - b.at.x, mdz = p.position.z - b.at.z, mdy = p.position.y - b.at.y;
+			const float d2 = mdx * mdx + mdz * mdz;
+			// jumped on: Mario coming down onto its top
+			if (fierce && d2 < 68.0f * 68.0f && mdy > 70 && mdy < 230 && p.velocity.y < 0) {
+				b.shatter = 0.001f, b.fuse = 0;
+				sound(0x3857, mid); // MSD_SE_OBJ_GLASS_BREAK
+				addPuff(mid, 30);
+				SmsVec3 up = p.velocity;
+				up.y = 28;
+				player().set_velocity(&up);
+				continue;
+			}
+			// water on it: its fuse out, and it sits a while, shaking it off
+			if (sprayHit(b.at, 60, 0, 2.2f * kBombR + kBombFootY + 30)) {
+				if (b.fuse > 0)
+					sound(0x2880, mid); // MSD_SE_EN_BOMBHEI_SPARK_END
+				b.fuse = 0, b.wet = 4.0f;
+			}
+			b.wet -= dt;
+			b.speed = 0;
+			if (b.fuse > 0) { // lit: after Mario, burning down
+				b.fuse -= dt;
+				sound(0x205E, add(mid, v(0, kBombR * 1.3f, 0))); // MSD_SE_EN_BOMBHEI_SPARK (held while asked)
+				if (haveCam)
+					sparks(glow, cam, add(mid, v(0, kBombR * 1.32f, 0)), t);
+				if (d2 > 60.0f * 60.0f)
+					bombStep(b, p.position.x, p.position.z, 300.0f, 5.0f, dt);
+				if (b.fuse <= 0 || (d2 < 100.0f * 100.0f && fabsf(mdy) < 140)) {
+					b.fuse = 0, b.boom = 0.001f;
+					sound(0x2858, mid); // MSD_SE_EN_BOMBHEI_BOMB
+					if (game().particle) {
+						SmsVec3 m3 = {mid.x, mid.y, mid.z};
+						game().particle(0xC5, &m3), game().particle(0xC4, &m3); // EXPLOSION_JPA_MS_BOMB_BOMB, _SMOKE
+					}
+					for (int k = 0; k < 8; k++) {
+						const float a = kPi * 2 * k / 8;
+						addPuff(add(mid, v(cosf(a) * 60, -20 + 20 * (k & 1), sinf(a) * 60)), 46);
+					}
+					const float ex = p.position.x - mid.x, ey = p.position.y + 80 - mid.y, ez = p.position.z - mid.z;
+					if (ex * ex + ey * ey + ez * ez < 300.0f * 300.0f)
+						knockMario(p, mid, 30.0f, 40.0f);
+					continue;
+				}
+			} else if (b.wet > 0) {
+				// sitting it out
+			} else if (fierce && d2 < 700.0f * 700.0f && fabsf(mdy) < 300) {
+				b.fuse = 4.5f; // Mario seen: lit
+				sound(0x2859, mid); // MSD_SE_EN_BOMBHEI_COUNT
+			} else if (b.wait > 0) {
+				b.wait -= dt;
+			} else {
+				const float dx = b.target.x - b.at.x, dz = b.target.z - b.at.z;
+				if (dx * dx + dz * dz < 25 * 25) { // there: a pause, and somewhere else near home
+					b.wait = 1.0f + frand(b.seed) * 2.5f;
+					const float a = frand(b.seed) * 2 * kPi, rr = 60 + frand(b.seed) * 260;
+					b.target = v(b.home.x + rr * sinf(a), b.home.y, b.home.z + rr * cosf(a));
+				} else if (!bombStep(b, b.target.x, b.target.z, 110.0f, 3.0f, dt)) {
+					b.target = b.home, b.wait = 0.6f;
+				}
+			}
+			if (b.speed > 1 && d2 < 2500.0f * 2500.0f)
+				sound(0x2068, mid); // MSD_SE_EN_BOMBHEI_ZENMAI: its key whirring as it walks (held while asked)
+			b.phase += dt * b.speed * 0.06f;
+			b.turn += dt * (b.speed > 1 ? 7.0f : 1.5f);
+			drawBomb(b, t);
+		}
+
+		if (!glow.empty() && puffTex && api().models->draw_textured)
+			api().models->draw_textured(&glow[0], (int)glow.size(), puffTex, SMS_BLEND_ADD);
+	}
+	// one bauble Bob-omb: its body (flashing white when lit, faster as the fuse burns down), pattern, cap and loop,
+	// eyes, feet stepping and its key turning; shaking while wet
+	void drawBomb(const Bomb& b, double t)
+	{
+		const float R = kBombR;
+		const V fwd = v(sinf(b.yaw), 0, cosf(b.yaw)), right = v(cosf(b.yaw), 0, -sinf(b.yaw)), up = v(0, 1, 0);
+		const float bob = b.speed > 1 ? 3.0f * fabsf(sinf(b.phase)) : 0.0f;
+		const float rock = b.speed > 1 ? 0.08f * sinf(b.phase) : (b.wet > 0 ? 0.06f * sinf((float)t * 40) : 0.0f);
+		const V mid = add(b.at, v(0, kBombFootY + R + bob, 0));
+		// the body leaning side to side as it waddles (turned about forward)
+		const V u2 = add(mul(up, cosf(rock)), mul(right, sinf(rock))), r2 = sub(mul(right, cosf(rock)), mul(up, sinf(rock)));
+		const float m[3][4] = {{u2.x * R, fwd.x * R, r2.x * R, mid.x}, {u2.y * R, fwd.y * R, r2.y * R, mid.y}, {u2.z * R, fwd.z * R, r2.z * R, mid.z}};
+		int body = b.look % 8;
+		if (b.fuse > 0) { // flashing: slow at first, quick as it burns down
+			const float rate = 3.0f + (4.5f - b.fuse) * 3.0f;
+			if (fmodf((float)t * rate, 1.0f) < 0.4f)
+				body = 8;
+		}
+		draw(bombBody[body], m);
+		draw(baublePat[(b.look / 8 + b.look) % 5][(b.look * 3) % 4], m);
+		draw(baubleCapMesh, m);
+		draw(bombFaceMesh, m);
+		// the key, turning about its own forward-back axis
+		const float c = cosf(b.turn), sn = sinf(b.turn);
+		const V ku = add(mul(u2, c), mul(r2, sn)), kr = sub(mul(r2, c), mul(u2, sn));
+		const float km[3][4] = {{ku.x * R, fwd.x * R, kr.x * R, mid.x}, {ku.y * R, fwd.y * R, kr.y * R, mid.y}, {ku.z * R, fwd.z * R, kr.z * R, mid.z}};
+		draw(bombKeyMesh, km);
+		// the feet: under it, stepping forward and back in turn
+		for (int s = -1; s <= 1; s += 2) {
+			const float step = b.speed > 1 ? 0.3f * sinf(b.phase + (s > 0 ? kPi : 0)) : 0.0f;
+			const float lift = b.speed > 1 ? 0.12f * fmaxf(0.0f, sinf(b.phase + (s > 0 ? kPi : 0) + kPi / 2)) : 0.0f;
+			const V at = add(b.at, add(add(mul(right, 0.42f * R * s), mul(fwd, step * R)), v(0, (0.16f + lift) * R, 0)));
+			const float fm[3][4] = {{up.x * R, fwd.x * R, right.x * R, at.x}, {up.y * R, fwd.y * R, right.y * R, at.y}, {up.z * R, fwd.z * R, right.z * R, at.z}};
+			draw(bombFootMesh, fm);
+		}
+	}
+	// jumped on: shards of its glass flying out and falling, spinning, with its cap
+	void drawShatter(const Bomb& b)
+	{
+		const float k = b.shatter, R = kBombR;
+		const V mid = add(b.at, v(0, kBombFootY + R, 0));
+		unsigned h = 31u * (unsigned)(b.look + 1);
+		for (int i = 0; i < 14; i++) {
+			const float a = frand(h) * 2 * kPi, e = 0.2f + frand(h) * 1.0f, sp = 180 + frand(h) * 220, spin = 4 + frand(h) * 10;
+			const V dir = v(cosf(a) * cosf(e), sinf(e), sinf(a) * cosf(e));
+			V at = add(mid, mul(dir, R * 0.7f + sp * k));
+			at.y -= 0.5f * 1400 * k * k;
+			if (at.y < b.at.y + 4)
+				at.y = b.at.y + 4;
+			const float sc = R * (0.55f + 0.4f * frand(h)) * (k > 0.7f ? (1 - k) / 0.3f : 1.0f);
+			const float c = cosf(spin * k + a), sn = sinf(spin * k + a);
+			const V x = v(c, sn * 0.6f, -sn), y = norm(cross(v(0.3f, 1, 0.2f), x)), z = cross(x, y);
+			const float m[3][4] = {{x.x * sc, y.x * sc, z.x * sc, at.x}, {x.y * sc, y.y * sc, z.y * sc, at.y}, {x.z * sc, y.z * sc, z.z * sc, at.z}};
+			draw(bombShards[i % 3 == 0 ? 8 : b.look % 8], m);
+		}
+	}
+	// a ball of fire (camera-facing soft dots, yellow at its heart, orange to red outside), 0.7 s long
+	void fireball(std::vector<SmsTexCorner>& c, const SmsCamera& cam, V mid, float k)
+	{
+		const V right = norm(v(cam.view[0][0], cam.view[0][1], cam.view[0][2])), up = norm(v(cam.view[1][0], cam.view[1][1], cam.view[1][2]));
+		const float f = k / 0.7f, fade = 1 - f;
+		for (int i = 0; i < 9; i++) {
+			const float a = i * 2.39996f, rr = i ? 70.0f * f + 25.0f : 0.0f;
+			const V p = add(mid, add(mul(right, rr * cosf(a)), mul(up, rr * sinf(a) + 40 * f)));
+			const float s = (i ? 90.0f : 150.0f) * (0.4f + f);
+			const V hr = mul(right, s), hu = mul(up, s);
+			quad(c, add(sub(p, hr), hu), add(add(p, hr), hu), sub(add(p, hr), hu), sub(sub(p, hr), hu), 255, (uint8_t)(i ? 120 : 220),
+			     (uint8_t)(i ? 30 : 90), (uint8_t)(255 * fade));
+		}
+	}
+	// a lit fuse's sparks, flickering about its loop
+	void sparks(std::vector<SmsTexCorner>& c, const SmsCamera& cam, V at, double t)
+	{
+		const V right = norm(v(cam.view[0][0], cam.view[0][1], cam.view[0][2])), up = norm(v(cam.view[1][0], cam.view[1][1], cam.view[1][2]));
+		for (int i = 0; i < 5; i++) {
+			const float a = (float)t * 23.0f + i * 1.7f, rr = 6 + 8 * fabsf(sinf((float)t * 31 + i));
+			const V p = add(at, add(mul(right, rr * cosf(a)), mul(up, rr * sinf(a) + 4)));
+			const float s = i ? 7.0f : 14.0f;
+			const V hr = mul(right, s), hu = mul(up, s);
+			quad(c, add(sub(p, hr), hu), add(add(p, hr), hu), sub(add(p, hr), hu), sub(sub(p, hr), hu), 255, 220, 120, 255);
+		}
+	}
 	// a sound where he is (the game's own, Mario's ear hearing it from there)
 	void sound(uint32_t id, V at)
 	{
@@ -1983,58 +2316,9 @@ struct ChristmasAdditions : sms::Mod {
 		if (setting("gingerbread", 1))
 			gingerbread(p);
 
-		// Bob-omb baubles: each its own colour (the whole Bob-omb tinted, shading kept), a cap and loop on top
-		// and one of five patterns, picked by its number
-		if (setting("baubles", 1)) {
-			// found by name once a stage (as the gingerbread men's markers are: near() with the small enemy
-			// flag never listed them)
-			if (baubles.empty() && baubleLooks < 8 && game().find_object) {
-				baubleLooks++;
-				for (int i = 0; i < 64; i++) {
-					char name[24];
-					snprintf(name, sizeof name, "Bauble %d", i);
-					if (SmsObject o = game().find_object(name))
-						baubles.push_back(std::make_pair(o, i));
-				}
-				if (!baubles.empty()) {
-					baubleLooks = 99;
-					info("%d Bob-omb baubles", (int)baubles.size());
-				}
-			}
-			static const SmsColor kBody[8] = {0xC81E28E0u, 0x2F5FD0E0u, 0x23964BE0u, 0xE6B43CE0u, 0x8C3CB4E0u, 0xD2D7E1E0u, 0xE65AA0E0u, 0x2AAAB4E0u};
-			for (size_t i = 0; i < baubles.size(); i++) {
-				SmsObject o = baubles[i].first;
-				const int k = baubles[i].second;
-				if (api().actor->flags && (api().actor->flags(o) & (SMS_ACTOR_FLAG_DEAD | SMS_ACTOR_FLAG_HIDDEN)))
-					continue;
-				if (!baubled.count(o) && game().object_set_tint) {
-					game().object_set_tint(o, kBody[k % 8]);
-					baubled.insert(o);
-				}
-				float rad = 0, tall = 0;
-				if (!api().actor->hit_size || !api().actor->hit_size(o, &rad, &tall) || rad <= 0)
-					continue;
-				SmsVec3 at;
-				if (!game().object_position || !game().object_position(o, &at))
-					continue;
-				if (!baubleLogged) { // what the body looks like to this mod, for fitting it better
-					baubleLogged = true;
-					info("bauble Bob-omb: hit radius %.0f, height %.0f; %d materials, %d joints", rad, tall,
-					     parts->material_count(o), parts->joint_count(o));
-					for (int j = 0; j < parts->material_count(o); j++)
-						info("  material %s", parts->material_name(o, j));
-					for (int j = 0; j < parts->joint_count(o); j++) {
-						float jm[3][4];
-						if (parts->joint(o, parts->joint_name(o, j), jm))
-							info("  joint %s at %.0f %.0f %.0f", parts->joint_name(o, j), jm[0][3] - at.x, jm[1][3] - at.y, jm[2][3] - at.z);
-					}
-				}
-				const float R = rad, cy = at.y + tall * 0.5f;
-				const float m[3][4] = {{0, 0, R, at.x}, {R, 0, 0, cy}, {0, R, 0, at.z}}; // x up, y along world z, z along world x
-				draw(baubleCapMesh, m);
-				draw(baublePat[(k / 8 + k) % 5][(k * 3) % 4], m);
-			}
-		}
+		// bauble Bob-ombs: the mod's own, where a level puts invisible coins named "Bauble N"
+		if (setting("baubles", 1))
+			bombsTick(p);
 
 		// snowmen
 		if (snowmen) {
@@ -2118,7 +2402,8 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
 		optionBool("gingerbread", "Gingerbread men walk about where a level puts them", true);
 		optionBool("gingerbread_chase", "Gingerbread men chase and hit Mario (jump on them)", true);
-		optionBool("baubles", "Bob-ombs a level names Bauble look like Christmas baubles", true);
+		optionBool("baubles", "Bauble Bob-ombs walk about where a level puts them", true);
+		optionBool("baubles_chase", "Bauble Bob-ombs light up, chase Mario and explode (jump on them)", true);
 		// FLUDD Weapons loading (now or later): told again
 		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
 			if (e.id && !strcmp(e.id, "fludd-weapons"))
@@ -2204,13 +2489,25 @@ struct ChristmasAdditions : sms::Mod {
 					static const Rgb kB[4] = {{255, 255, 255}, kBaubleGold, kSilver, kBaubleGold};
 					Mesh pm;
 					baublePattern(pm, k, kA[c], kB[c]);
-					baublePat[k][c] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
-				}
+							baublePat[k][c] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
+						}
+					for (int c = 0; c < 9; c++) {
+						Mesh bm, sm;
+						bm.sphere(v(0, 0, 0), 1.0f, kBaubleBody[c], 22, 16);
+						bombBody[c] = api().models->create(handle(), &bm.corners[0], (int)bm.corners.size());
+						bombShard(sm, kBaubleBody[c]);
+						bombShards[c] = api().models->create(handle(), &sm.corners[0], (int)sm.corners.size());
+					}
+					Mesh fm, ft, ky;
+					bombFace(fm), bombFoot(ft), bombKey(ky);
+					bombFaceMesh = api().models->create(handle(), &fm.corners[0], (int)fm.corners.size());
+					bombFootMesh = api().models->create(handle(), &ft.corners[0], (int)ft.corners.size());
+					bombKeyMesh  = api().models->create(handle(), &ky.corners[0], (int)ky.corners.size());
 		}
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), bombs.clear(), baubleLooks = 0, bombClock = -1, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
