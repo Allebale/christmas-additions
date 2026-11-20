@@ -42,7 +42,5 @@ Next, in order:
   separate, so Christmas Additions has to find and retexture the goop weapon's look itself, or FLUDD
   Weapons offers a general hook for it. It must also act like ice (Allebale, Nov 20): enemies it hits
   freeze, and the floor it lands on turns slippery.
-- **Footprints back on snowman-enemy** (Allebale, Nov 20: "in the future"): the snow footprints are a
-  Remastered game feature, so the clean branch has none. Bring them back the Chase way: general game/SDK
-  tools (e.g. marks left on the ground, a surface's footstep type) and the footprints themselves in a mod.
-  Warn before adding the game part.
+- (Footprints: not lost. The snow footprints and puffs are this mod's own (snow_steps); the Remastered game
+  feature missing from snowman-enemy is only the wet prints after puddles, a reflections option.)
