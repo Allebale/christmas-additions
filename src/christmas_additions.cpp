@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <vector>
@@ -239,6 +240,186 @@ void snowmanArms(Mesh& m)
 		V mid = add(a, mul(sub(b, a), 0.7f));
 		m.cylinder(mid, add(mid, v(24, 6, 6.0f * s)), 3, 2, kTwig, 6);
 	}
+}
+
+// Bob-ombs dressed as Christmas baubles (the level names them "Bauble ..."): in a frame round the body's middle,
+// x up, the body 1 round. A cap and its loop on top, and one of five patterns, each in its own colour.
+const Rgb kSilver = {214, 220, 230}, kBaubleGold = {236, 190, 60};
+void baubleCap(Mesh& m)
+{
+	m.cylinder(v(0.9f, 0, 0), v(1.16f, 0, 0), 0.30f, 0.27f, kBaubleGold, 14);
+	m.torus(0.94f, 0.31f, 0.035f, kBaubleGold, 16, 6);
+	std::vector<V> loop;
+	std::vector<float> r;
+	for (int i = 0; i <= 16; i++) {
+		float t = kPi * 2 * i / 16;
+		loop.push_back(v(1.28f + 0.12f * cosf(t + kPi), 0.12f * sinf(t), 0));
+		r.push_back(0.032f);
+	}
+	m.tube(loop, r, kBaubleGold, 8, false);
+}
+void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
+{
+	switch (kind) {
+	case 0: // one wide band round the middle
+		m.torus(0, 1.0f, 0.09f, a, 32, 8);
+		break;
+	case 1: // two thin bands
+		for (int s = -1; s <= 1; s += 2)
+			m.torus(0.38f * s, sqrtf(1 - 0.38f * 0.38f), 0.05f, a, 32, 6);
+		break;
+	case 2: { // dots all over
+		unsigned h = 7u;
+		for (int i = 0; i < 22; i++) {
+			h = h * 1103515245u + 12345u;
+			float up = -60 + 120.0f * ((h >> 8) & 1023) / 1023.0f;
+			h = h * 1103515245u + 12345u;
+			float side = 360.0f * ((h >> 8) & 1023) / 1023.0f;
+			m.sphere(onBall(v(0, 0, 0), 1.0f, up, side), 0.07f, i % 2 ? a : b, 6, 4);
+		}
+		break;
+	}
+	case 3: // a zigzag of little beads round the middle
+		for (int i = 0; i < 24; i++)
+			m.sphere(onBall(v(0, 0, 0), 1.01f, (i % 2 ? 12.0f : -12.0f), 15.0f * i), 0.06f, a, 6, 4);
+		m.torus(0.55f, sqrtf(1 - 0.55f * 0.55f), 0.035f, b, 28, 5);
+		m.torus(-0.55f, sqrtf(1 - 0.55f * 0.55f), 0.035f, b, 28, 5);
+		break;
+	default: // stripes from top to bottom
+		for (int k = 0; k < 8; k++) {
+			std::vector<V> c;
+			std::vector<float> r;
+			for (int i = 0; i <= 12; i++) {
+				c.push_back(onBall(v(0, 0, 0), 1.005f, -80.0f + 160.0f * i / 12, 45.0f * k));
+				r.push_back(0.045f);
+			}
+			m.tube(c, r, k % 2 ? a : b, 6, false);
+		}
+	}
+}
+
+// The bauble Bob-ombs' own parts (the mod's enemy: the game's Bob-omb is on no stage the launcher can copy from),
+// in the body's frame, its radius 1: x up, y forward, z to the side. Eight bauble colours, and white for its flash.
+const Rgb kBaubleBody[9] = {{200, 30, 40}, {47, 95, 208}, {35, 150, 75}, {230, 180, 60}, {140, 60, 180}, {210, 215, 225},
+                            {230, 90, 160}, {42, 170, 180}, {255, 250, 240}};
+const Rgb kBombFoot = {240, 168, 40};
+void bombFace(Mesh& m) // two big eyes, looking ahead
+{
+	for (int s = -1; s <= 1; s += 2) {
+		const V eye = onBall(v(0, 0, 0), 0.93f, 14, 21.0f * s);
+		m.sphere(eye, 0.2f, kWhite, 10, 8);
+		m.sphere(onBall(v(0, 0, 0), 1.08f, 12, 21.0f * s), 0.1f, kCoal, 8, 6);
+		m.sphere(onBall(v(0, 0, 0), 1.14f, 16, 19.0f * s), 0.03f, kWhite, 5, 4); // a glint
+	}
+}
+void bombFoot(Mesh& m) // a round shoe, toe forward
+{
+	std::vector<V> c;
+	std::vector<float> r;
+	c.push_back(v(0, -0.2f, 0)), r.push_back(0.16f);
+	c.push_back(v(0.02f, 0.05f, 0)), r.push_back(0.2f);
+	c.push_back(v(0, 0.3f, 0)), r.push_back(0.15f);
+	m.tube(c, r, kBombFoot, 10);
+}
+void bombKey(Mesh& m) // the wind-up key in its back, turning about y
+{
+	m.cylinder(v(0, -0.9f, 0), v(0, -1.32f, 0), 0.07f, 0.07f, kBaubleGold, 8);
+	for (int s = -1; s <= 1; s += 2) {
+		std::vector<V> c;
+		std::vector<float> r;
+		for (int i = 0; i <= 16; i++) {
+			float t = 2 * kPi * i / 16;
+			c.push_back(v(s * (0.27f + 0.2f * cosf(t)), -1.36f + 0.1f * sinf(t), 0));
+			r.push_back(0.05f);
+		}
+		m.tube(c, r, kBaubleGold, 6, false);
+	}
+}
+// a curved piece of its glass, a sixth of the ball round +x (half-angle 58 degrees, so six of them together, round
+// up, down and four ways about, make it whole): coloured outside, silvery inside, its broken edge between
+void bombPiece(Mesh& m, Rgb col)
+{
+	const int rings = 5, seg = 14;
+	const float edge = 58.0f * kPi / 180, in = 0.93f;
+	const Rgb inside = {205, 212, 224}, rim = {235, 240, 248};
+	auto at = [&](int i, int k, float r) {
+		const float th = edge * i / rings, ph = 2 * kPi * k / seg;
+		// a ragged broken edge: the last ring wobbles
+		const float th2 = i == rings ? th * (0.9f + 0.1f * sinf(ph * 3 + 1.3f) + 0.05f * sinf(ph * 7)) : th;
+		return mul(v(cosf(th2), sinf(th2) * cosf(ph), sinf(th2) * sinf(ph)), r);
+	};
+	for (int i = 0; i < rings; i++)
+		for (int k = 0; k < seg; k++) {
+			const int k2 = (k + 1) % seg;
+			m.quad(at(i, k, 1), at(i + 1, k, 1), at(i + 1, k2, 1), at(i, k2, 1), col);           // outside
+			m.quad(at(i, k2, in), at(i + 1, k2, in), at(i + 1, k, in), at(i, k, in), inside);  // inside
+		}
+	for (int k = 0; k < seg; k++) { // the edge
+		const int k2 = (k + 1) % seg;
+		m.quad(at(rings, k, 1), at(rings, k, in), at(rings, k2, in), at(rings, k2, 1), rim);
+	}
+}
+
+// Gingerbread men (the mod's own, walking about where a level marks with invisible coins named "Gingerbread N"):
+// a cookie figure in pieces that swing as he walks, tall and long-legged as Il Piantissimo. Built round
+// (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
+// thickness. Each piece hangs from its joint: the body and head, two arms (from the shoulder), two legs (hip).
+const Rgb kCookie = {178, 104, 46}, kIcing = {250, 250, 252}, kGumRed = {214, 36, 48}, kGumGreen = {44, 168, 70}, kChoc = {52, 30, 20};
+const Rgb kDough = {150, 86, 38}, kSyrup = {205, 170, 120}; // melted gingerbread; water gone sweet off him
+const float kHipY = 86, kShoulderY = 146, kHipX = 19, kShoulderX = 33, kHeadR = 37;
+const Rgb kCheek = {236, 120, 120};
+// a wavy line of icing across a limb's front, round `at`, `w` wide
+static void icingWave(Mesh& m, V at, float w, float frontZ)
+{
+	std::vector<V> c;
+	std::vector<float> r;
+	for (int i = 0; i <= 10; i++) {
+		float t = i / 10.0f;
+		c.push_back(v(at.x - w / 2 + w * t, at.y + 2.5f * sinf(t * kPi * 3), frontZ));
+		r.push_back(1.9f);
+	}
+	m.tube(c, r, kIcing, 6, false);
+}
+void gingerBody(Mesh& m)
+{
+	const float headY = kShoulderY + kHeadR + 2;
+	m.cylinder(v(0, kHipY - 8, 0), v(0, kShoulderY, 0), 37, 34, kCookie, 18);   // a wide, round body
+	m.sphere(v(0, kHipY - 8, 0), 37, kCookie, 16, 8);
+	m.sphere(v(0, kShoulderY, 0), 34, kCookie, 16, 8);
+	m.sphere(v(0, headY, 0), kHeadR, kCookie, 18, 12);                          // a big round head
+	for (int s = -1; s <= 1; s += 2) {
+		m.sphere(v(12.0f * s, headY + 7, 34), 6.0f, kChoc, 10, 6);              // round chocolate eyes
+		m.sphere(v(12.0f * s + 2, headY + 9.5f, 39), 1.8f, kIcing, 6, 4);        // a glint in each
+		m.sphere(v(21.0f * s, headY - 6, 30), 5.5f, kCheek, 10, 6);             // rosy cheeks
+	}
+	std::vector<V> c;                                                            // a smile: one icing line
+	std::vector<float> r;
+	for (int i = 0; i <= 12; i++) {
+		float t = (i - 6) / 6.0f, x = 13 * t, y = headY - 8 - 6 * (1 - t * t);
+		float z = sqrtf(kHeadR * kHeadR - x * x - (y - headY) * (y - headY)) + 0.5f;
+		c.push_back(v(x, y, z));
+		r.push_back(2.0f);
+	}
+	m.tube(c, r, kIcing, 6, false);
+	for (int i = 0; i < 3; i++)                                                  // gumdrop buttons
+		m.sphere(v(0, kHipY + 8 + 21.0f * i, 36), 7, i == 1 ? kGumGreen : kGumRed, 10, 6);
+}
+// an arm from its shoulder (at the origin), down and out: side -1 left, +1 right
+void gingerArm(Mesh& m, int side)
+{
+	V hand = v(30.0f * side, -46, 0);
+	m.cylinder(v(0, 0, 0), hand, 16, 15, kCookie, 12);
+	m.sphere(v(0, 0, 0), 16, kCookie, 10, 6);
+	m.sphere(hand, 16, kCookie, 12, 8);
+	icingWave(m, add(mul(hand, 0.72f), v(0, 0, 0)), 24, 15.5f);
+}
+// a leg from the hip (at the origin) to a round foot
+void gingerLeg(Mesh& m, int side)
+{
+	V foot = v(9.0f * side, -kHipY + 18, 0);
+	m.cylinder(v(0, 0, 0), foot, 18, 17, kCookie, 12);
+	m.sphere(foot, 18, kCookie, 12, 8);
+	icingWave(m, mul(foot, 0.8f), 26, 17.5f);
 }
 
 // Rudolph's antlers, ears and nose. Made in Yoshi's model's own rest pose (yoshi_model.bmd: x his left,
@@ -828,6 +1009,29 @@ std::vector<uint8_t> printPicture()
 	return px;
 }
 
+// a puddle seen from above: a ragged round edge, a little darker rim, a soft shine off centre;
+// grey, so its corners give it its colour (water, or melted dough)
+std::vector<uint8_t> puddlePicture(int w)
+{
+	std::vector<uint8_t> px(w * w * 4);
+	for (int y = 0; y < w; y++)
+		for (int x = 0; x < w; x++) {
+			float u = (x + 0.5f) / w * 2 - 1, vv = (y + 0.5f) / w * 2 - 1;
+			float ang = atan2f(vv, u), r = sqrtf(u * u + vv * vv);
+			float edge = 0.78f + 0.08f * sinf(ang * 3 + 0.7f) + 0.05f * sinf(ang * 5 + 2.1f) + 0.03f * sinf(ang * 9);
+			float d = r / edge; // under 1 inside
+			float a = 1 - smooth01(0.9f, 1.0f, d);
+			float rim = smooth01(0.7f, 0.97f, d);
+			float sx = u + 0.3f, sy = vv + 0.3f;
+			float shine = expf(-(sx * sx + sy * sy) / 0.03f) * 0.5f;
+			float c = 205 - 55 * rim + 50 * shine;
+			c = c > 255 ? 255 : c;
+			uint8_t* p = &px[(y * w + x) * 4];
+			p[0] = p[1] = p[2] = (uint8_t)c, p[3] = (uint8_t)(a * (0.8f + 0.2f * rim) * 255);
+		}
+	return px;
+}
+
 std::vector<uint8_t> softDot(int w, float hard)
 {
 	std::vector<uint8_t> px(w * w * 4);
@@ -848,6 +1052,24 @@ struct Print {
 struct Puff {
 	V p;
 	float born, size;
+};
+struct Bomb { // a bauble Bob-omb
+	V home, at, target;
+	float yaw = 0, phase = 0, wait = 0, speed = 0, turn = 0; // turn: its key
+	float fuse = 0;     // lit: seconds left (0 not lit)
+	float wet = 0;      // put out by water: sitting it out
+	float boom = 0;     // exploding: seconds into it
+	float shatter = 0;  // jumped on (or pushed into a wall): seconds into its glass flying apart
+	V push = {0, 0, 0}; // pushed by the water: how fast, which way (units a second)
+	float gone = 0;     // till it is back home
+	int look = 0;       // colour and pattern
+	unsigned seed = 1;
+};
+struct Puddle { // left by a gingerbread man: spreading out, staying a while, then drying away
+	V p;
+	float born, size, life, yaw, grow;
+	uint8_t r, g, b, a;
+	V n; // which way it faces: up on the ground, out of a wall he was splatted on
 };
 struct Flake {
 	V at; // where it starts in the box round the camera
@@ -885,11 +1107,37 @@ struct ChristmasAdditions : sms::Mod {
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	std::set<SmsObject> bare;           // Piantas whose own hat and leaf hair are off under the Santa hat, this stage
+	// gingerbread men: where each started (the level's marker), where he is, which way he faces, where he goes
+	struct Ginger {
+		V home, at, target;
+		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
+		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
+		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (5 melt him); trembling; his end so far
+		float hiss = 0, dry = 0, drip = 0;   // till the next splash sound; till he starts drying off; next drip
+		V push = {0, 0, 0};                  // pushed by the water: how fast, which way (units a second)
+		V wallN = {0, 0, 1};                 // splatted on a wall: the way out of it
+		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
+		bool chasing = false;
+		unsigned seed = 1;
+	};
+	std::vector<Ginger> gingers;
+	std::vector<SmsObject> gingerCoins; // the level's "Gingerbread coin N", out of reach till one is dropped
+	size_t nextCoin = 0;
+	int gingerLooks = 0;
+	float gingerRest = 0; // after any of them hits Mario: none swings again till this runs out
+	double gingerClock = -1;
+	SmsMesh gBody = 0, gArm[2] = {}, gLeg[2] = {};
+	std::vector<Bomb> bombs;              // the level's bauble Bob-ombs, this stage
+	double bombClock = -1;
+	int baubleLooks = 0;
+	SmsMesh bombLook[8] = {}, bombPieces[8] = {}, bombFlash = 0, bombFootMesh = 0, bombKeyMesh = 0;
+
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
 	// ---------------------------------------------------------------- snow
-	SmsTexture printTex = 0, puffTex = 0, flakeTex = 0;
+	SmsTexture printTex = 0, puffTex = 0, flakeTex = 0, puddleTex = 0;
+	std::vector<Puddle> puddles;
 	bool snowyGround = false, snowfall = false; // this stage's markers
 	int markerLooks = 0;                         // looked for them this many times this stage
 	float now = 0;
@@ -1399,8 +1647,822 @@ struct ChristmasAdditions : sms::Mod {
 		}
 	}
 
+	// The FLUDD Weapons mod's black goop as ice (its "fludd-weapons.goop" service): asked for while the option
+	// is on, given back as black goop when it is turned off or this mod unloads
+	struct FluddWeaponsGoop {
+		uint32_t size;
+		void (*set_ice)(int on);
+		int (*ice)(void);
+	};
+	bool iceAsked = false, iceKnown = false; // what FLUDD Weapons was last told; whether that is still so
+	void askIce(bool on)
+	{
+		iceKnown = true;
+		const SmsCoreApi* core = api().core;
+		if (!core->is_loaded("fludd-weapons"))
+			return;
+		const FluddWeaponsGoop* g = (const FluddWeaponsGoop*)core->require(handle(), "fludd-weapons.goop", 1);
+		if (!g || g->size < offsetof(FluddWeaponsGoop, set_ice) + sizeof(void*) || !g->set_ice)
+			return;
+		g->set_ice(on ? 1 : 0);
+		if (on != iceAsked)
+			info(on ? "FLUDD Weapons' black goop is ice" : "FLUDD Weapons' black goop is black goop again");
+		iceAsked = on;
+	}
+	~ChristmasAdditions()
+	{
+		if (iceAsked)
+			askIce(false);
+	}
+
+	// Gingerbread men: found once a stage (its markers), then each wanders round where he started (a spot
+	// picked within 7 m, walked to, a pause, the next). Mario within 12 m: he runs after him, and close enough
+	// he swings at him (a point of health and a knock back, then a moment before he can again). Jumped on,
+	// he crumbles, and is back where he started half a minute later. Mario far off again: he walks home.
+	static float frand(unsigned& s)
+	{
+		s = s * 1103515245u + 12345u;
+		return ((s >> 8) & 0xFFFF) / 65535.0f;
+	}
+	// a step his way, kept out of walls and on the ground: false when a wall stopped him
+	bool gingerStep(Ginger& g, float tx, float tz, float speed, float turn, float dt)
+	{
+		float dx = tx - g.at.x, dz = tz - g.at.z;
+		float want = atan2f(dx, dz), dy = want - g.yaw;
+		while (dy > kPi) dy -= 2 * kPi;
+		while (dy < -kPi) dy += 2 * kPi;
+		g.yaw += dy * (dt * turn < 1 ? dt * turn : 1);
+		if (fabsf(dy) > 1.0f)
+			speed *= 0.3f;
+		g.speed = speed;
+		SmsVec3 want3 = {g.at.x + sinf(g.yaw) * speed * dt, g.at.y + 60, g.at.z + cosf(g.yaw) * speed * dt}, out = want3;
+		if (game().out_of_walls)
+			game().out_of_walls(&want3, 40.0f, &out, nullptr);
+		const float moved = (out.x - g.at.x) * (out.x - g.at.x) + (out.z - g.at.z) * (out.z - g.at.z);
+		g.at.x = out.x, g.at.z = out.z;
+		SmsGround gr;
+		memset(&gr, 0, sizeof gr);
+		gr.size = sizeof gr;
+		SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
+		if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
+			g.at.y = gr.floor;
+		return moved >= (speed * dt * 0.3f) * (speed * dt * 0.3f);
+	}
+	void addPuddle(V at, float size, float life, float grow, Rgb col, uint8_t a, unsigned& seed, V n = v(0, 1, 0))
+	{
+		if (puddles.size() >= 64)
+			puddles.erase(puddles.begin());
+		Puddle pd = {at, now, size, life, frand(seed) * 2 * kPi, grow, col.r, col.g, col.b, a, n};
+		puddles.push_back(pd);
+	}
+	// the puddles, lying flat on the ground where they were left
+	void drawPuddles()
+	{
+		while (!puddles.empty() && now - puddles[0].born > puddles[0].life)
+			puddles.erase(puddles.begin());
+		if (puddles.empty() || !SMS_API_HAS(&api(), models) || !api().models->draw_textured)
+			return;
+		if (!puddleTex && api().models->texture_create) {
+			std::vector<uint8_t> px = puddlePicture(64);
+			puddleTex = api().models->texture_create(handle(), &px[0], 64, 64);
+		}
+		if (!puddleTex)
+			return;
+		std::vector<SmsTexCorner> c;
+		for (size_t i = 0; i < puddles.size(); i++) {
+			const Puddle& pd = puddles[i];
+			const float age = now - pd.born;
+			float s = pd.size * (age < pd.grow ? 0.25f + 0.75f * age / pd.grow : 1.0f);
+			float fade = pd.life - age < 3 ? (pd.life - age) / 3 : 1.0f; // drying away over its last 3 s
+			s *= 0.85f + 0.15f * fade;
+			V f = mul(v(sinf(pd.yaw), 0, cosf(pd.yaw)), s), r = mul(v(cosf(pd.yaw), 0, -sinf(pd.yaw)), s);
+			V p = add(pd.p, v(0, 1.5f + 0.01f * (float)i, 0));
+			if (pd.n.y < 0.5f) { // on a wall: flat against it, a little taller than wide (running down it)
+				const V across = norm(cross(v(0, 1, 0), pd.n)), tilt = v(0, 1, 0);
+				const float c = cosf(pd.yaw * 0.15f), sn = sinf(pd.yaw * 0.15f); // turned only a little
+				r = mul(add(mul(across, c), mul(tilt, sn)), s), f = mul(sub(mul(tilt, c), mul(across, sn)), s * 1.25f);
+				p = add(pd.p, mul(pd.n, 1.5f + 0.01f * (float)i));
+			}
+			quad(c, add(sub(p, r), f), add(add(p, r), f), sub(add(p, r), f), sub(sub(p, r), f), pd.r, pd.g, pd.b,
+			     (uint8_t)(pd.a * fade));
+		}
+		api().models->draw_textured(&c[0], (int)c.size(), puddleTex, SMS_BLEND_ALPHA);
+	}
+	// one of the level's spare coins brought to where a gingerbread man ended, a little up off the ground
+	void dropCoin(V at)
+	{
+		if (nextCoin >= gingerCoins.size() || !game().object_set_position)
+			return;
+		SmsVec3 p = {at.x, at.y + 60, at.z};
+		game().object_set_position(gingerCoins[nextCoin++], &p);
+	}
+	// Which of these to draw: the `most` nearest `from` within `within`. The game draws at most 96 of the mods'
+	// models a moment (all mods together), so the far ones are left out, and the snowmen keep theirs.
+	static std::vector<char> nearest(const std::vector<V>& at, V from, int most, float within)
+	{
+		std::vector<std::pair<float, size_t> > d;
+		for (size_t i = 0; i < at.size(); i++) {
+			const float dx = at[i].x - from.x, dy = at[i].y - from.y, dz = at[i].z - from.z, d2 = dx * dx + dy * dy + dz * dz;
+			if (d2 < within * within)
+				d.push_back(std::make_pair(d2, i));
+		}
+		std::sort(d.begin(), d.end());
+		std::vector<char> show(at.size(), 0);
+		for (size_t k = 0; k < d.size() && (int)k < most; k++)
+			show[d[k].second] = 1;
+		return show;
+	}
+	V viewPoint(const SmsPlayer& p)
+	{
+		SmsCamera cam;
+		memset(&cam, 0, sizeof cam);
+		cam.size = sizeof cam;
+		if (SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid)
+			return v(cam.position.x, cam.position.y, cam.position.z);
+		return v(p.position.x, p.position.y, p.position.z);
+	}
+	// FLUDD's flying water passing through a round space at `at` (its drops used up on it): any this tick
+	bool sprayHit(V at, float rad, float lo, float hi, float* wayX = nullptr, float* wayZ = nullptr)
+	{
+		const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
+		if (!wa || !wa->count || !wa->get)
+			return false;
+		bool hit = false;
+		const int nd = wa->count();
+		for (int k = 0; k < nd; k++) {
+			SmsWaterDrop wd;
+			memset(&wd, 0, sizeof wd);
+			wd.size = sizeof wd;
+			if (!wa->get(k, &wd) || wd.landed || wd.tag != 0)
+				continue;
+			const float sp2 = wd.velocity.x * wd.velocity.x + wd.velocity.y * wd.velocity.y + wd.velocity.z * wd.velocity.z;
+			const float dx = wd.position.x - at.x, dz = wd.position.z - at.z, dy = wd.position.y - at.y;
+			if (sp2 > 8.0f * 8.0f && dx * dx + dz * dz < rad * rad && dy > lo && dy < hi) {
+				hit = true;
+				const float hv = sqrtf(wd.velocity.x * wd.velocity.x + wd.velocity.z * wd.velocity.z);
+				if (wayX && wayZ && hv > 0.01f) // the way the water flies, added up
+					*wayX += wd.velocity.x / hv, *wayZ += wd.velocity.z / hv;
+				wd.alive = 0;
+				if (wa->set)
+					wa->set(k, &wd);
+			}
+		}
+		return hit;
+	}
+	// Mario hit from `from`: a point of health, knocked off his feet away from it, facing it
+	void knockMario(const SmsPlayer& p, V from, float push, float up)
+	{
+		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
+		if (!canHurt || p.invincible)
+			return;
+		const float dx = p.position.x - from.x, dz = p.position.z - from.z;
+		player().hurt(1);
+		if (player().set_yaw)
+			player().set_yaw(atan2f(-dx, -dz) * 57.29578f);
+		if (player().set_status)
+			player().set_status(0x208B3, 0);
+		if (player().set_forward_speed)
+			player().set_forward_speed(-push);
+		SmsVec3 kb = p.velocity;
+		kb.y = up;
+		if (player().set_velocity)
+			player().set_velocity(&kb);
+	}
+	// a bauble's step, as a gingerbread man's (kept out of walls, on the ground): false when a wall stopped it
+	bool bombStep(Bomb& b, float tx, float tz, float speed, float turn, float dt)
+	{
+		Ginger g;
+		g.at = b.at, g.yaw = b.yaw;
+		const bool ok = gingerStep(g, tx, tz, speed, turn, dt);
+		b.at = g.at, b.yaw = g.yaw, b.speed = g.speed;
+		return ok;
+	}
+
+	// Bauble Bob-ombs (the mod's own enemy): found once a stage by their markers, invisible coins named "Bauble N".
+	// Each waddles round where it starts, its key turning. Mario near: its fuse lights (sparks at its loop, its
+	// glass flashing white, faster as it burns down) and it runs after him; the fuse out or him reached, it
+	// explodes (a point of health and a knock back within 3 m). Water puts the fuse out for a while. Jumped on,
+	// it shatters like a glass bauble and leaves a coin. Back where it started 25 s after either.
+	static constexpr float kBombR = 46, kBombFootY = 14; // its radius; how high its feet hold it
+	void bombsTick(const SmsPlayer& p)
+	{
+		const double t = api().core->time();
+		float dt = bombClock < 0 ? 0.0f : (float)(t - bombClock);
+		bombClock = t;
+		if (dt > 0.1f)
+			dt = 0.1f;
+		if (bombs.empty() && baubleLooks < 8 && game().find_object && game().object_position) {
+			baubleLooks++;
+			for (int i = 0; i < 64; i++) {
+				char name[24];
+				snprintf(name, sizeof name, "Bauble %d", i);
+				SmsObject o = game().find_object(name);
+				SmsVec3 at;
+				if (!o || !game().object_position(o, &at))
+					continue;
+				Bomb b;
+				b.home = b.at = b.target = v(at.x, at.y, at.z);
+				b.look = i;
+				b.seed = 7919u * (unsigned)(i + 3);
+				b.yaw  = frand(b.seed) * 2 * kPi;
+				b.wait = frand(b.seed) * 2;
+				bombs.push_back(b);
+			}
+			if (!bombs.empty()) {
+				baubleLooks = 99;
+				info("%d bauble Bob-ombs", (int)bombs.size());
+			}
+		}
+		if (bombs.empty())
+			return;
+		const bool fierce = setting("baubles_chase", 1) != 0;
+		SmsCamera cam;
+		memset(&cam, 0, sizeof cam);
+		cam.size = sizeof cam;
+		const bool haveCam = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
+		std::vector<SmsTexCorner> glow; // fire and sparks, added on top
+		std::vector<V> where;
+		for (size_t i = 0; i < bombs.size(); i++)
+			where.push_back(bombs[i].gone > 0 ? v(1e9f, 1e9f, 1e9f) : bombs[i].at);
+		const std::vector<char> show = nearest(where, viewPoint(p), 5, 3500); // (4 models each)
+		for (size_t i = 0; i < bombs.size(); i++) {
+			Bomb& b = bombs[i];
+			const V mid = add(b.at, v(0, kBombFootY + kBombR, 0));
+			if (b.gone > 0) {
+				if (!setting("enemies_once", 0)) // (or gone for good this visit)
+					b.gone -= dt;
+				if (b.gone <= 0) { // back home, as new, with a puff
+					Bomb n;
+					n.home = n.at = n.target = b.home;
+					n.look = b.look, n.seed = b.seed + 1, n.yaw = b.yaw, n.wait = 1;
+					b = n;
+					addPuff(add(b.at, v(0, kBombR, 0)), 40);
+				}
+				continue;
+			}
+			if (b.boom > 0) { // exploding: a ball of fire swelling and fading, smoke puffs
+				b.boom += dt;
+				if (haveCam)
+					fireball(glow, cam, mid, b.boom);
+				if (b.boom > 0.7f)
+					b.boom = 0, b.gone = 25;
+				continue;
+			}
+			if (b.shatter > 0) { // its glass flying apart and falling
+				b.shatter += dt;
+				if (show[i])
+					drawShatter(b);
+				if (b.shatter > 1.6f)
+					b.shatter = 0, b.gone = 25, dropCoin(b.at);
+				continue;
+			}
+			const float mdx = p.position.x - b.at.x, mdz = p.position.z - b.at.z, mdy = p.position.y - b.at.y;
+			const float d2 = mdx * mdx + mdz * mdz;
+			// jumped on: Mario coming down onto its top
+			if (fierce && d2 < 68.0f * 68.0f && mdy > 70 && mdy < 230 && p.velocity.y < 0) {
+				b.shatter = 0.001f, b.fuse = 0;
+				sound(0x3857, mid); // MSD_SE_OBJ_GLASS_BREAK
+				addPuff(mid, 30);
+				SmsVec3 up = p.velocity;
+				up.y = 28;
+				player().set_velocity(&up);
+				continue;
+			}
+			// water on it: its fuse out, and it sits a while, shaking it off
+			float wx = 0, wz = 0;
+			if (sprayHit(b.at, 60, 0, 2.2f * kBombR + kBombFootY + 30, &wx, &wz)) {
+				if (b.fuse > 0)
+					sound(0x2880, mid); // MSD_SE_EN_BOMBHEI_SPARK_END
+				b.fuse = 0, b.wet = 4.0f;
+				const float wl = sqrtf(wx * wx + wz * wz); // and pushed along by it, as the gingerbread men are
+				if (wl > 0.01f) {
+					b.push.x += wx / wl * 6500.0f * dt, b.push.z += wz / wl * 6500.0f * dt;
+					const float sp = sqrtf(b.push.x * b.push.x + b.push.z * b.push.z);
+					if (sp > 1050.0f)
+						b.push = mul(b.push, 1050.0f / sp);
+				}
+			}
+			if (b.push.x * b.push.x + b.push.z * b.push.z > 1.0f) {
+				SmsVec3 want3 = {b.at.x + b.push.x * dt, b.at.y + 50, b.at.z + b.push.z * dt}, out = want3;
+				if (game().out_of_walls)
+					game().out_of_walls(&want3, 40.0f, &out, nullptr);
+				const float sp = sqrtf(b.push.x * b.push.x + b.push.z * b.push.z);
+				const float ox = out.x - want3.x, oz = out.z - want3.z, ol = sqrtf(ox * ox + oz * oz);
+				if (sp > 180.0f && ol > sp * dt * 0.5f) { // pushed into a wall fast enough: it breaks (Allebale)
+					b.at.x = out.x, b.at.z = out.z;
+					b.shatter = 0.001f, b.fuse = 0, b.push = v(0, 0, 0);
+					sound(0x3857, add(b.at, v(0, kBombFootY + kBombR, 0))); // MSD_SE_OBJ_GLASS_BREAK
+					addPuff(add(b.at, v(0, kBombFootY + kBombR, 0)), 30);
+					continue;
+				}
+				b.at.x = out.x, b.at.z = out.z;
+				SmsGround gr;
+				memset(&gr, 0, sizeof gr);
+				gr.size = sizeof gr;
+				SmsVec3 probe = {b.at.x, b.at.y + 120, b.at.z};
+				if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - b.at.y) < 200)
+					b.at.y = gr.floor;
+				b.push = mul(b.push, expf(-3.5f * dt));
+			}
+			b.wet -= dt;
+			b.speed = 0;
+			if (b.fuse > 0) { // lit: after Mario, burning down
+				b.fuse -= dt;
+				sound(0x205E, add(mid, v(0, kBombR * 1.3f, 0))); // MSD_SE_EN_BOMBHEI_SPARK (held while asked)
+				if (haveCam)
+					sparks(glow, cam, add(mid, v(0, kBombR * 1.32f, 0)), t);
+				if (d2 > 60.0f * 60.0f)
+					bombStep(b, p.position.x, p.position.z, 300.0f, 5.0f, dt);
+				if (b.fuse <= 0 || (d2 < 100.0f * 100.0f && fabsf(mdy) < 140)) {
+					b.fuse = 0, b.boom = 0.001f;
+					sound(0x2858, mid); // MSD_SE_EN_BOMBHEI_BOMB
+					if (game().particle) {
+						SmsVec3 m3 = {mid.x, mid.y, mid.z};
+						game().particle(0xC5, &m3), game().particle(0xC4, &m3); // EXPLOSION_JPA_MS_BOMB_BOMB, _SMOKE
+					}
+					for (int k = 0; k < 8; k++) {
+						const float a = kPi * 2 * k / 8;
+						addPuff(add(mid, v(cosf(a) * 60, -20 + 20 * (k & 1), sinf(a) * 60)), 46);
+					}
+					const float ex = p.position.x - mid.x, ey = p.position.y + 80 - mid.y, ez = p.position.z - mid.z;
+					if (ex * ex + ey * ey + ez * ez < 300.0f * 300.0f)
+						knockMario(p, mid, 30.0f, 40.0f);
+					continue;
+				}
+			} else if (b.wet > 0) {
+				// sitting it out
+			} else if (fierce && d2 < 700.0f * 700.0f && fabsf(mdy) < 300) {
+				b.fuse = 4.5f; // Mario seen: lit
+				sound(0x2859, mid); // MSD_SE_EN_BOMBHEI_COUNT
+			} else if (b.wait > 0) {
+				b.wait -= dt;
+			} else {
+				const float dx = b.target.x - b.at.x, dz = b.target.z - b.at.z;
+				if (dx * dx + dz * dz < 25 * 25) { // there: a pause, and somewhere else near home
+					b.wait = 1.0f + frand(b.seed) * 2.5f;
+					const float a = frand(b.seed) * 2 * kPi, rr = 60 + frand(b.seed) * 260;
+					b.target = v(b.home.x + rr * sinf(a), b.home.y, b.home.z + rr * cosf(a));
+				} else if (!bombStep(b, b.target.x, b.target.z, 110.0f, 3.0f, dt)) {
+					b.target = b.home, b.wait = 0.6f;
+				}
+			}
+			if (b.speed > 1 && d2 < 2500.0f * 2500.0f)
+				sound(0x2068, mid); // MSD_SE_EN_BOMBHEI_ZENMAI: its key whirring as it walks (held while asked)
+			b.phase += dt * b.speed * 0.06f;
+			b.turn += dt * (b.speed > 1 ? 7.0f : 1.5f);
+			if (show[i])
+				drawBomb(b, t);
+		}
+
+		if (!glow.empty() && puffTex && api().models->draw_textured)
+			api().models->draw_textured(&glow[0], (int)glow.size(), puffTex, SMS_BLEND_ADD);
+	}
+	// one bauble Bob-omb: its body (flashing white when lit, faster as the fuse burns down), pattern, cap and loop,
+	// eyes, feet stepping and its key turning; shaking while wet
+	void drawBomb(const Bomb& b, double t)
+	{
+		const float R = kBombR;
+		const V fwd = v(sinf(b.yaw), 0, cosf(b.yaw)), right = v(cosf(b.yaw), 0, -sinf(b.yaw)), up = v(0, 1, 0);
+		const float bob = b.speed > 1 ? 3.0f * fabsf(sinf(b.phase)) : 0.0f;
+		const float rock = b.speed > 1 ? 0.08f * sinf(b.phase) : (b.wet > 0 ? 0.06f * sinf((float)t * 40) : 0.0f);
+		const V mid = add(b.at, v(0, kBombFootY + R + bob, 0));
+		// the body leaning side to side as it waddles (turned about forward)
+		const V u2 = add(mul(up, cosf(rock)), mul(right, sinf(rock))), r2 = sub(mul(right, cosf(rock)), mul(up, sinf(rock)));
+		const float m[3][4] = {{u2.x * R, fwd.x * R, r2.x * R, mid.x}, {u2.y * R, fwd.y * R, r2.y * R, mid.y}, {u2.z * R, fwd.z * R, r2.z * R, mid.z}};
+		bool flash = false;
+		if (b.fuse > 0) { // flashing white: slow at first, quick as it burns down
+			const float rate = 3.0f + (4.5f - b.fuse) * 3.0f;
+			flash = fmodf((float)t * rate, 1.0f) < 0.4f;
+		}
+		draw(flash ? bombFlash : bombLook[b.look % 8], m);
+		// the key, turning about its own forward-back axis
+		const float c = cosf(b.turn), sn = sinf(b.turn);
+		const V ku = add(mul(u2, c), mul(r2, sn)), kr = sub(mul(r2, c), mul(u2, sn));
+		const float km[3][4] = {{ku.x * R, fwd.x * R, kr.x * R, mid.x}, {ku.y * R, fwd.y * R, kr.y * R, mid.y}, {ku.z * R, fwd.z * R, kr.z * R, mid.z}};
+		draw(bombKeyMesh, km);
+		// the feet: under it, stepping forward and back in turn
+		for (int s = -1; s <= 1; s += 2) {
+			const float step = b.speed > 1 ? 0.3f * sinf(b.phase + (s > 0 ? kPi : 0)) : 0.0f;
+			const float lift = b.speed > 1 ? 0.12f * fmaxf(0.0f, sinf(b.phase + (s > 0 ? kPi : 0) + kPi / 2)) : 0.0f;
+			const V at = add(b.at, add(add(mul(right, 0.42f * R * s), mul(fwd, step * R)), v(0, (0.16f + lift) * R, 0)));
+			const float fm[3][4] = {{up.x * R, fwd.x * R, right.x * R, at.x}, {up.y * R, fwd.y * R, right.y * R, at.y}, {up.z * R, fwd.z * R, right.z * R, at.z}};
+			draw(bombFootMesh, fm);
+		}
+	}
+	// jumped on: the bauble breaking apart, as glass does: six curved pieces of it (whole at first) bursting out
+	// from its middle and up, tumbling, falling to the ground and lying there a moment before they go; its key
+	// flung off backwards, its feet toppling where it stood
+	void drawShatter(const Bomb& b)
+	{
+		const float k = b.shatter, R = kBombR;
+		const V fwd = v(sinf(b.yaw), 0, cosf(b.yaw)), right = v(cosf(b.yaw), 0, -sinf(b.yaw)), up = v(0, 1, 0);
+		const V mid = add(b.at, v(0, kBombFootY + R, 0));
+		const V dirs[6] = {up, mul(up, -1), fwd, mul(fwd, -1), right, mul(right, -1)};
+		const float shrink = k > 1.3f ? (1.6f - k) / 0.3f : 1.0f; // gone over its last 0.3 s
+		unsigned h = 31u * (unsigned)(b.look + 1);
+		for (int i = 0; i < 6; i++) {
+			const float sp = 160 + frand(h) * 140, lift = 220 + frand(h) * 160, spin = (frand(h) - 0.5f) * 22;
+			V d = dirs[i];
+			V vel = add(mul(d, sp), v(0, i == 1 ? 60 : lift, 0)); // out from the middle, and up
+			V at = add(mid, mul(vel, k));
+			at.y -= 0.5f * 1600 * k * k;
+			const float floor = b.at.y + 4 + (i == 1 ? 0 : 8);
+			bool down = false;
+			if (at.y < floor)
+				at.y = floor, down = true;
+			// tumbling about an axis across its way out, till it lands
+			V ax = norm(cross(d, fabsf(d.y) > 0.9f ? fwd : up));
+			const float ang = spin * (down ? fminf(k, 0.35f) : k);
+			const float c = cosf(ang), sn = sinf(ang);
+			// d turned about ax (Rodrigues)
+			V x = add(add(mul(d, c), mul(cross(ax, d), sn)), mul(ax, dot(ax, d) * (1 - c)));
+			if (down) // lying on the ground: curved side up
+				x = norm(add(mul(x, 0.3f), up));
+			const V y = norm(cross(x, fabsf(x.y) > 0.9f ? fwd : up)), z = cross(x, y);
+			const float sc = R * shrink;
+			const float m[3][4] = {{x.x * sc, y.x * sc, z.x * sc, at.x}, {x.y * sc, y.y * sc, z.y * sc, at.y}, {x.z * sc, y.z * sc, z.z * sc, at.z}};
+			draw(bombPieces[b.look % 8], m);
+		}
+		// its key: flung off backwards, spinning
+		{
+			V at = add(mid, add(mul(fwd, -(R + 160 * k)), v(0, 260 * k - 800 * k * k, 0)));
+			if (at.y < b.at.y + 6)
+				at.y = b.at.y + 6;
+			const float ang = 18 * k, c = cosf(ang), sn = sinf(ang), sc = R * shrink;
+			const V ku = add(mul(up, c), mul(right, sn)), kr = sub(mul(right, c), mul(up, sn));
+			const V o = mul(fwd, R * 1.1f); // (the key sits 1.1 behind the middle in its model: brought back to here)
+			const float km[3][4] = {{ku.x * sc, fwd.x * sc, kr.x * sc, at.x + o.x}, {ku.y * sc, fwd.y * sc, kr.y * sc, at.y + o.y}, {ku.z * sc, fwd.z * sc, kr.z * sc, at.z + o.z}};
+			draw(bombKeyMesh, km);
+		}
+		// its feet: left standing, then toppling over outwards
+		for (int s = -1; s <= 1; s += 2) {
+			const float tip = fminf(k * 3, 1.0f) * 1.3f * s;
+			const V fu = add(mul(up, cosf(tip)), mul(right, sinf(tip))), fr = sub(mul(right, cosf(tip)), mul(up, sinf(tip)));
+			const V at = add(b.at, add(mul(right, 0.42f * R * s), v(0, 0.16f * R, 0)));
+			const float sc = R * shrink;
+			const float fm[3][4] = {{fu.x * sc, fwd.x * sc, fr.x * sc, at.x}, {fu.y * sc, fwd.y * sc, fr.y * sc, at.y}, {fu.z * sc, fwd.z * sc, fr.z * sc, at.z}};
+			draw(bombFootMesh, fm);
+		}
+	}
+	// a ball of fire (camera-facing soft dots, yellow at its heart, orange to red outside), 0.7 s long
+	void fireball(std::vector<SmsTexCorner>& c, const SmsCamera& cam, V mid, float k)
+	{
+		const V right = norm(v(cam.view[0][0], cam.view[0][1], cam.view[0][2])), up = norm(v(cam.view[1][0], cam.view[1][1], cam.view[1][2]));
+		const float f = k / 0.7f, fade = 1 - f;
+		for (int i = 0; i < 9; i++) {
+			const float a = i * 2.39996f, rr = i ? 70.0f * f + 25.0f : 0.0f;
+			const V p = add(mid, add(mul(right, rr * cosf(a)), mul(up, rr * sinf(a) + 40 * f)));
+			const float s = (i ? 90.0f : 150.0f) * (0.4f + f);
+			const V hr = mul(right, s), hu = mul(up, s);
+			quad(c, add(sub(p, hr), hu), add(add(p, hr), hu), sub(add(p, hr), hu), sub(sub(p, hr), hu), 255, (uint8_t)(i ? 120 : 220),
+			     (uint8_t)(i ? 30 : 90), (uint8_t)(255 * fade));
+		}
+	}
+	// a lit fuse's sparks, flickering about its loop
+	void sparks(std::vector<SmsTexCorner>& c, const SmsCamera& cam, V at, double t)
+	{
+		const V right = norm(v(cam.view[0][0], cam.view[0][1], cam.view[0][2])), up = norm(v(cam.view[1][0], cam.view[1][1], cam.view[1][2]));
+		for (int i = 0; i < 5; i++) {
+			const float a = (float)t * 23.0f + i * 1.7f, rr = 6 + 8 * fabsf(sinf((float)t * 31 + i));
+			const V p = add(at, add(mul(right, rr * cosf(a)), mul(up, rr * sinf(a) + 4)));
+			const float s = i ? 7.0f : 14.0f;
+			const V hr = mul(right, s), hu = mul(up, s);
+			quad(c, add(sub(p, hr), hu), add(add(p, hr), hu), sub(add(p, hr), hu), sub(sub(p, hr), hu), 255, 220, 120, 255);
+		}
+	}
+	// a sound where he is (the game's own, Mario's ear hearing it from there)
+	void sound(uint32_t id, V at)
+	{
+		if (!SMS_API_HAS(&api(), audio) || !api().audio || !api().audio->play_sound_at)
+			return;
+		SmsVec3 s3 = {at.x, at.y + 60, at.z};
+		api().audio->play_sound_at(id, &s3);
+	}
+	void gingerbread(const SmsPlayer& p)
+	{
+		const double t = api().core->time();
+		float dt = gingerClock < 0 ? 0.0f : (float)(t - gingerClock);
+		gingerClock = t;
+		if (dt > 0.1f)
+			dt = 0.1f;
+		if (gingers.empty() && gingerLooks < 8 && game().find_object && game().object_position) {
+			gingerLooks++;
+			for (int i = 0; i < 32; i++) {
+				char name[24];
+				snprintf(name, sizeof name, "Gingerbread %d", i);
+				SmsObject o = game().find_object(name);
+				SmsVec3 at;
+				if (!o || !game().object_position(o, &at))
+					continue;
+				Ginger g;
+				g.home = g.at = g.target = v(at.x, at.y, at.z);
+				g.seed = 977u * (unsigned)(i + 1);
+				g.yaw  = frand(g.seed) * 2 * kPi;
+				g.wait = frand(g.seed) * 2;
+				gingers.push_back(g);
+			}
+			if (!gingers.empty()) {
+				gingerCoins.clear(), nextCoin = 0;
+				for (int i = 0; i < 64; i++) {
+					char name[32];
+					snprintf(name, sizeof name, "Gingerbread coin %d", i);
+					if (SmsObject c = game().find_object(name))
+						gingerCoins.push_back(c);
+				}
+				info("%d coins for them to drop", (int)gingerCoins.size());
+				gingerLooks = 99;
+				info("%d gingerbread men", (int)gingers.size());
+			}
+		}
+		const bool fierce  = setting("gingerbread_chase", 1) != 0;
+		std::vector<V> where;
+		for (size_t i = 0; i < gingers.size(); i++)
+			where.push_back(gingers[i].gone > 0 ? v(1e9f, 1e9f, 1e9f) : gingers[i].at);
+		const std::vector<char> show = nearest(where, viewPoint(p), 4, 4000); // (5 models each)
+		gingerRest -= dt;
+		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
+		for (size_t i = 0; i < gingers.size(); i++) {
+			Ginger& g = gingers[i];
+			if (g.gone > 0) { // crumbled: back home after a while (or never, this visit, with "enemies_once")
+				if (!setting("enemies_once", 0))
+					g.gone -= dt;
+				if (g.gone <= 0)
+					g.at = g.target = g.home, g.chasing = false, g.wait = 1, g.wet = 0, g.push = v(0, 0, 0);
+				continue;
+			}
+			if (g.dying > 0) { // his end: drawn as it goes, then gone
+				g.dying += dt;
+				if (g.dying >= 1.2f)
+					g.dying = 0, g.gone = 30, dropCoin(g.at); // however he went, a coin where he was
+				else if (show[i])
+					drawGinger(g, 0);
+				continue;
+			}
+			// FLUDD's water on him: the game's flying drops passing through him (each used up on him)
+			bool hitNow = false;
+			float pushX = 0, pushZ = 0; // the way the water hitting him flies
+			const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
+			if (wa && wa->count && wa->get) {
+				const int nd = wa->count();
+				for (int k = 0; k < nd; k++) {
+					SmsWaterDrop wd;
+					memset(&wd, 0, sizeof wd);
+					wd.size = sizeof wd;
+					if (!wa->get(k, &wd) || wd.landed || wd.tag != 0)
+						continue;
+					const float ddx = wd.position.x - g.at.x, ddz = wd.position.z - g.at.z, ddy = wd.position.y - g.at.y;
+					// only spray still flying fast at him: drops lying or rolling about his feet don't count
+					// (they held him still long after the spraying, Allebale)
+					const float sp2 = wd.velocity.x * wd.velocity.x + wd.velocity.y * wd.velocity.y + wd.velocity.z * wd.velocity.z;
+					if (sp2 > 8.0f * 8.0f && ddx * ddx + ddz * ddz < 55.0f * 55.0f && ddy > 20 && ddy < 230) {
+						hitNow = true;
+						{
+							const float hv = sqrtf(wd.velocity.x * wd.velocity.x + wd.velocity.z * wd.velocity.z);
+							if (hv > 0.01f)
+								pushX += wd.velocity.x / hv, pushZ += wd.velocity.z / hv;
+						}
+						wd.alive = 0;
+						if (wa->set)
+							wa->set(k, &wd);
+					}
+				}
+			}
+			if (hitNow) {
+				g.wet += dt * 2.0f; // (the stream reaches him a tick in two)
+				if (g.hiss <= 0)
+					sound(0x291E, g.at), g.hiss = 0.35f; // MSD_SE_EN_TORI_WATER_HIT (a light splash: the Poihana's was a deep bass, Allebale)
+				if (g.drip <= 0) { // dripping: a little puddle of sugary water by his feet now and then
+					const float a = frand(g.seed) * 2 * kPi, rr = frand(g.seed) * 30;
+					addPuddle(v(g.at.x + rr * sinf(a), g.at.y, g.at.z + rr * cosf(a)), 26 + frand(g.seed) * 16, 9, 0.4f,
+					          kSyrup, 150, g.seed);
+					g.drip = 0.3f;
+				}
+				g.hurt = 0.25f;
+				g.dry  = 4.0f;
+				g.chasing = true;   // and he is cross
+				if (g.wet >= 5.0f) {
+					g.dying = 0.001f, g.dieKind = 1;
+					sound(0x283A, g.at); // MSD_SE_EN_MAMEGESO_MELT
+					addPuddle(g.at, 95, 25, 1.2f, kDough, 230, g.seed); // all of him, spreading as he goes down
+					info("a gingerbread man melted");
+					continue;
+				}
+			}
+			// the water pushing him back the way it flies (kept out of walls, on the ground), easing off once it stops
+			if (hitNow) {
+				const float pl = sqrtf(pushX * pushX + pushZ * pushZ);
+				if (pl > 0.01f) {
+					g.push.x += pushX / pl * 6500.0f * dt, g.push.z += pushZ / pl * 6500.0f * dt;
+					const float sp = sqrtf(g.push.x * g.push.x + g.push.z * g.push.z);
+					if (sp > 1050.0f)
+						g.push = mul(g.push, 1050.0f / sp);
+				}
+			}
+			if (g.push.x * g.push.x + g.push.z * g.push.z > 1.0f) {
+				SmsVec3 want3 = {g.at.x + g.push.x * dt, g.at.y + 60, g.at.z + g.push.z * dt}, out = want3;
+				if (game().out_of_walls)
+					game().out_of_walls(&want3, 40.0f, &out, nullptr);
+				// pushed into a wall fast enough: splat, flat against it, a puddle of him on it (Allebale)
+				const float sp = sqrtf(g.push.x * g.push.x + g.push.z * g.push.z);
+				const float wx = out.x - want3.x, wz = out.z - want3.z, wl = sqrtf(wx * wx + wz * wz);
+				if (sp > 180.0f && wl > sp * dt * 0.5f) {
+					g.wallN = v(wx / wl, 0, wz / wl);
+					g.at.x = out.x - g.wallN.x * 30.0f, g.at.z = out.z - g.wallN.z * 30.0f; // pressed up to it
+					g.yaw = atan2f(-g.wallN.x, -g.wallN.z);                                 // facing it
+					g.dying = 0.001f, g.dieKind = 2, g.push = v(0, 0, 0);
+					const V onWall = v(out.x - g.wallN.x * 39.0f, g.at.y + 95.0f, out.z - g.wallN.z * 39.0f);
+					addPuddle(onWall, 70, 20, 0.25f, kDough, 230, g.seed, g.wallN);
+					sound(0x2802, g.at); // MSD_SE_EN_NAMEKURI_DOWN_WT: a wet splat
+					sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
+					info("a gingerbread man hit a wall");
+					continue;
+				}
+				g.at.x = out.x, g.at.z = out.z;
+				SmsGround gr;
+				memset(&gr, 0, sizeof gr);
+				gr.size = sizeof gr;
+				SmsVec3 probe = {g.at.x, g.at.y + 120, g.at.z};
+				if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - g.at.y) < 200)
+					g.at.y = gr.floor;
+				g.push = mul(g.push, expf(-3.5f * dt));
+			}
+			g.hurt -= dt, g.hiss -= dt, g.dry -= dt, g.drip -= dt;
+			if (g.dry <= 0 && g.wet > 0) // left alone a while: he dries off again
+				g.wet = std::max(0.0f, g.wet - dt * 0.3f);
+			g.cool -= dt, g.swing -= dt;
+			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z, mdy = p.position.y - g.at.y;
+			const float d2 = mdx * mdx + mdz * mdz;
+			const float hx = g.at.x - g.home.x, hz = g.at.z - g.home.z;
+			// jumped on: Mario coming down onto his head
+			if (fierce && d2 < 75.0f * 75.0f && mdy > 110 && mdy < 270 && p.velocity.y < 0) {
+				g.dying = 0.001f, g.dieKind = 0;
+				addPuff(add(g.at, v(0, 90, 0)), 50);
+				sound(0x2803, g.at); // MSD_SE_EN_COMMON_DEAD (the watermelon's crash was too deep)
+				addPuddle(g.at, 70, 20, 0.5f, kDough, 220, g.seed); // what is left of him on the ground
+				sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
+				SmsVec3 up = p.velocity;
+				up.y = 28;
+				player().set_velocity(&up);
+				continue;
+			}
+			if (!g.chasing && fierce && d2 < 1200.0f * 1200.0f && fabsf(mdy) < 400)
+				g.chasing = true, sound(0x2826, g.at); // he's seen Mario: MSD_SE_EN_HMKRI_VO_ATTACK
+			if (g.chasing && (!fierce || d2 > 1700.0f * 1700.0f || hx * hx + hz * hz > 2500.0f * 2500.0f || fabsf(mdy) > 700)) {
+				g.chasing = false; // too far from Mario, or from home: back
+				g.target  = g.home;
+				g.wait    = 0;
+			}
+			g.speed = 0;
+			if (g.chasing) {
+				if (d2 > 75.0f * 75.0f) // the water slows him, but he keeps coming
+					gingerStep(g, p.position.x, p.position.z, g.hurt > 0 ? 200.0f : 540.0f, g.hurt > 0 ? 3.0f : 7.0f, dt);
+				else
+					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
+				// close: a swing at him (his right arm), once in a while
+				// Not while he is down, or getting up: a hit gives every gingerbread man a rest longer
+				// than Mario takes to get back on his feet (Allebale: they pummelled him to death)
+				const bool down = (p.status & 0xFFFF0u) == 0x208B0u; // the knocked-down falls (0x208B0..0x208BF)
+				if (d2 < 115.0f * 115.0f && fabsf(mdy) < 120 && g.cool <= 0 && gingerRest <= 0 && !down) {
+					g.cool     = 5.0f;
+					gingerRest = 4.0f;
+					g.swing    = 0.35f;
+					sound(0x3867, g.at); // MSD_SE_OBJ_SWING1
+					if (canHurt && !p.invincible) {
+						// a point of health, then knocked back off his feet, away from him (the game's own
+						// knocked-back fall, as a wall hit too hard gives), facing him
+						player().hurt(1);
+						if (player().set_status && player().set_yaw)
+							player().set_yaw(atan2f(-mdx, -mdz) * 57.29578f);
+						if (player().set_status)
+							player().set_status(0x208B3, 0);
+						if (player().set_forward_speed)
+							player().set_forward_speed(-24.0f);
+						SmsVec3 kb = p.velocity;
+						kb.y = 32.0f;
+						player().set_velocity(&kb);
+					}
+				}
+			} else if (g.wait > 0) {
+				g.wait -= dt;
+			} else {
+				float dx = g.target.x - g.at.x, dz = g.target.z - g.at.z;
+				if (dx * dx + dz * dz < 30 * 30) { // there: a pause, and somewhere else
+					g.wait = 0.8f + frand(g.seed) * 2.5f;
+					float a = frand(g.seed) * 2 * kPi, r = 150 + frand(g.seed) * 550;
+					g.target = v(g.home.x + r * sinf(a), g.home.y, g.home.z + r * cosf(a));
+				} else if (!gingerStep(g, g.target.x, g.target.z, 200.0f, 4.0f, dt)) {
+					g.target = g.home; // a wall in the way: somewhere else
+					g.wait   = 0.5f;
+				}
+			}
+			const float before = g.phase;
+				g.phase += dt * g.speed * 0.045f;
+				if (g.speed > 1 && floorf(g.phase / kPi) != floorf(before / kPi)) // a foot down
+					sound(0x2839, g.at); // MSD_SE_EN_HMKRI_WALK
+				if (show[i])
+					drawGinger(g, g.speed);
+			}
+			drawPuddles();
+	}
+	// one gingerbread man drawn: walking (his limbs swinging), hit by water (trembling, melting lower and wider
+	// as he soaks), jumped on (squashed, then his pieces flying apart and falling) or melted away
+	void drawGinger(const Ginger& g, float speed)
+	{
+		float sy = 1.0f, sw = 1.0f;                         // his height and width, times his own
+		const float thin = 0.62f;                           // how thick a cookie is
+		const float soak = g.wet / 5.0f;                    // 0 dry, 1 melted
+		sy -= 0.25f * soak, sw += 0.12f * soak;
+		float shake = g.hurt > 0 ? 4.0f * sinf(g.hurt * 70.0f) : 0.0f;
+		float burst = -1;                                   // jumped on: 0..1 through his falling apart
+		float flat = 1.0f, spread = 0.0f;                   // splatted on a wall: how thick still; arms and legs out
+		if (g.dying > 0 && g.dieKind == 1) {                // melted: down into a puddle of dough
+			const float k = g.dying / 1.2f;
+			sy *= 1.0f - 0.92f * k, sw *= 1.0f + 0.9f * k, shake = 0;
+		} else if (g.dying > 0 && g.dieKind == 2) {         // splatted: flat against the wall, then sliding down it
+			const float k = g.dying < 0.12f ? g.dying / 0.12f : 1.0f;
+			flat = 1.0f - 0.85f * k, spread = k, sw *= 1.0f + 0.3f * k, shake = 0;
+		} else if (g.dying > 0) {
+			if (g.dying < 0.15f)
+				sy *= 1.0f - 2.8f * g.dying, sw *= 1.0f + 2.0f * g.dying; // squashed flat first
+			else
+				burst = (g.dying - 0.15f) / 1.05f, sy *= 0.58f, sw *= 1.3f;
+		}
+		const V right = v(cosf(g.yaw), 0, -sinf(g.yaw)), up = v(0, 1, 0), fwd = v(sinf(g.yaw), 0, cosf(g.yaw));
+		const float swing = speed > 1 ? 0.55f * sinf(g.phase) : 0.0f;
+		const float bob = speed > 1 ? 4.0f * fabsf(sinf(g.phase)) : 0.0f;
+		// a piece's frame: its own x, y, z turned about x (a swing forward and back) and z (out to the side)
+		auto frame = [&](float m[3][4], V at, float swingX, float outZ) {
+			float cx = cosf(swingX), sx = sinf(swingX), cz = cosf(outZ), sz = sinf(outZ);
+			V ax = add(mul(right, cz), mul(up, sz));
+			V ay = add(mul(up, cz * cx), add(mul(right, -sz * cx), mul(fwd, sx)));
+			V az = sub(mul(fwd, cx), mul(add(mul(up, cz), mul(right, -sz)), sx));
+			ax = mul(ax, sw), ay = mul(ay, sy), az = mul(az, sw * thin * flat);
+			m[0][0] = ax.x, m[0][1] = ay.x, m[0][2] = az.x, m[0][3] = at.x;
+			m[1][0] = ax.y, m[1][1] = ay.y, m[1][2] = az.y, m[1][3] = at.y;
+			m[2][0] = ax.z, m[2][1] = ay.z, m[2][2] = az.z, m[2][3] = at.z;
+		};
+		// flying apart: a piece pushed out its way and up, falling, tumbling
+		// Once down, it lies flat on its back on the ground (its frame's origin `rest` above it), where it landed,
+		// settling there over 0.15 s; before, its origin was held off the ground but the piece kept standing up from
+		// it, so his body hung in the air (Allebale).
+		auto fly = [&](V at, V way, float spin, float rest, float& swingX, float& outZ) -> V {
+			if (burst < 0)
+				return at;
+			const float t = burst * 1.05f;
+			// when it comes down to the ground: 330 t - 900 t^2 = drop (the later root)
+			const float drop = g.at.y + rest - at.y;
+			const float disc = 330.0f * 330.0f - 4 * 900.0f * drop;
+			const float land = disc > 0 ? (330.0f + sqrtf(disc)) / 1800.0f : 0.0f;
+			const float tt = t < land ? t : land;
+			V o = add(mul(way, 260.0f * tt), v(0, 330.0f * tt - 900.0f * tt * tt, 0));
+			const float sx = swingX + spin * tt * 9, oz = outZ + spin * tt * 5;
+			if (t < land) {
+				swingX = sx, outZ = oz;
+				return add(at, o);
+			}
+			const float k = fminf((t - land) / 0.15f, 1.0f); // settling flat
+			swingX = sx + (-1.5708f - sx) * k, outZ = oz * (1 - k);
+			o.y = drop;
+			return add(at, o);
+		};
+		float m[3][4];
+		V base = add(add(g.at, v(0, bob, 0)), mul(right, shake));
+		if (g.dieKind == 2 && g.dying > 0.4f) // sliding down the wall
+			base.y -= 60.0f * (g.dying - 0.4f) * (g.dying - 0.4f) * 3.0f;
+		float bx = 0, bz = 0;
+		// (fly first, on its own: it turns bx and bz, and a call's arguments may be read in any order, so passed
+		// alongside they were read before it, and the body never lay down; Allebale saw it standing in the air)
+		const V bodyAt = fly(base, v(0, 0.3f, 0), 0.4f, 23.0f * sw, bx, bz);
+		frame(m, bodyAt, bx, bz);
+		draw(gBody, m);
+		for (int side = 0; side < 2; side++) {
+			const float sgn = side ? 1.0f : -1.0f;
+			V hip = add(base, add(mul(right, kHipX * sgn * sw), mul(up, kHipY * sy)));
+			float lx = swing * (side ? 1 : -1), lz = 0.6f * spread * sgn;
+			V hipAt = fly(hip, add(mul(right, sgn * 0.8f), mul(fwd, 0.3f)), sgn, 12.0f * sw, lx, lz);
+			frame(m, hipAt, lx, lz);
+			draw(gLeg[side], m);
+			V shoulder = add(base, add(mul(right, kShoulderX * sgn * sw), mul(up, kShoulderY * sy)));
+			float armSwing = -swing * 0.8f * (side ? 1 : -1), armOut = 0;
+			if (g.swing > 0 && side == 1) // his right arm swung at Mario: up and forward, then down
+				armSwing = -2.4f * (g.swing / 0.35f), armOut = 0.3f;
+			if (g.hurt > 0) // flinching from the water: arms up over him
+				armSwing = -2.0f, armOut = 0.4f * sgn;
+			if (spread > 0) // splatted: arms flung out wide
+				armSwing = 0, armOut = 1.3f * spread * sgn;
+			V shAt = fly(shoulder, add(mul(right, sgn * 1.0f), mul(fwd, -0.4f)), -sgn, 11.0f * sw, armSwing, armOut);
+			frame(m, shAt, armSwing, armOut);
+			draw(gArm[side], m);
+		}
+	}
+
 	void tick()
 	{
+		{
+			const bool want = setting("ice_goop", 1) != 0;
+			if (!iceKnown || want != iceAsked)
+				askIce(want);
+		}
 		{
 			SmsCamera cam;
 			memset(&cam, 0, sizeof cam);
@@ -1450,6 +2512,8 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
+
+
 		// snowmen
 		if (snowmen) {
 			int n = api().actor->near(&p.position, 9000.0f, SMS_ACTOR_FLAG_SMALL_ENEMY, found, 160);
@@ -1512,6 +2576,13 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
+
+		// the mod's own enemies after the snowmen (the game draws only so many of the mods' models a moment)
+		if (setting("gingerbread", 1))
+			gingerbread(p);
+		// bauble Bob-ombs: where a level puts invisible coins named "Bauble N"
+		if (setting("baubles", 1))
+			bombsTick(p);
 	}
 
 	int load() override
@@ -1529,6 +2600,17 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("no_moustache", "No Mario moustache", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
+		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
+		optionBool("gingerbread", "Gingerbread men walk about where a level puts them", true);
+		optionBool("gingerbread_chase", "Gingerbread men chase and hit Mario (jump on them)", true);
+		optionBool("baubles", "Bauble Bob-ombs walk about where a level puts them", true);
+		optionBool("baubles_chase", "Bauble Bob-ombs light up, chase Mario and explode (jump on them)", true);
+		optionBool("enemies_once", "Beaten gingerbread men and bauble Bob-ombs stay gone till the level loads", false);
+		// FLUDD Weapons loading (now or later): told again
+		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
+			if (e.id && !strcmp(e.id, "fludd-weapons"))
+				iceKnown = false;
+		});
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
@@ -1590,10 +2672,45 @@ struct ChristmasAdditions : sms::Mod {
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
-		buttons = make(snowmanButtons);
+		gBody   = make(gingerBody);
+		{
+			Mesh a0, a1, l0, l1;
+			gingerArm(a0, -1), gingerArm(a1, 1), gingerLeg(l0, -1), gingerLeg(l1, 1);
+			gArm[0] = api().models->create(handle(), &a0.corners[0], (int)a0.corners.size());
+			gArm[1] = api().models->create(handle(), &a1.corners[0], (int)a1.corners.size());
+			gLeg[0] = api().models->create(handle(), &l0.corners[0], (int)l0.corners.size());
+			gLeg[1] = api().models->create(handle(), &l1.corners[0], (int)l1.corners.size());
+		}
+		buttons = make(snowmanButtons); // (the snowmen's first: the game keeps 64 models for all mods together)
 		arms    = make(snowmanArms);
+		{
+			// bauble Bob-ombs: one model a look (body, pattern, cap and loop, eyes together, so one drawing each),
+			// a white one for its flash, its foot, key and a bit of glass
+			static const Rgb kA[4] = {kBaubleGold, kSilver, {255, 255, 255}, {200, 30, 40}};
+			static const Rgb kB[4] = {{255, 255, 255}, kBaubleGold, kSilver, kBaubleGold};
+			for (int k = 0; k < 8; k++) {
+				Mesh lm;
+				lm.sphere(v(0, 0, 0), 1.0f, kBaubleBody[k], 16, 12);
+				baublePattern(lm, k % 5, kA[(k * 3) % 4], kB[(k * 3) % 4]);
+				baubleCap(lm);
+				bombFace(lm);
+				bombLook[k] = api().models->create(handle(), &lm.corners[0], (int)lm.corners.size());
+				Mesh pm;
+				bombPiece(pm, kBaubleBody[k]);
+				bombPieces[k] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
+				}
+			Mesh wm, ft, ky;
+			wm.sphere(v(0, 0, 0), 1.02f, kBaubleBody[8], 16, 12);
+			baubleCap(wm);
+			bombFoot(ft), bombKey(ky);
+			bombFlash     = api().models->create(handle(), &wm.corners[0], (int)wm.corners.size());
+			bombFootMesh  = api().models->create(handle(), &ft.corners[0], (int)ft.corners.size());
+			bombKeyMesh   = api().models->create(handle(), &ky.corners[0], (int)ky.corners.size());
+			if (!bombLook[7] || !bombKeyMesh)
+				warn("too few models left for the bauble Bob-ombs (the game keeps 64 for all mods)");
+		}
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(); }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), bombs.clear(), baubleLooks = 0, bombClock = -1, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
