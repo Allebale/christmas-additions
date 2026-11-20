@@ -1043,6 +1043,8 @@ struct ChristmasAdditions : sms::Mod {
 		unsigned seed = 1;
 	};
 	std::vector<Ginger> gingers;
+	std::vector<SmsObject> gingerCoins; // the level's "Gingerbread coin N", out of reach till one is dropped
+	size_t nextCoin = 0;
 	int gingerLooks = 0;
 	float gingerRest = 0; // after any of them hits Mario: none swings again till this runs out
 	double gingerClock = -1;
@@ -1662,6 +1664,14 @@ struct ChristmasAdditions : sms::Mod {
 		}
 		api().models->draw_textured(&c[0], (int)c.size(), puddleTex, SMS_BLEND_ALPHA);
 	}
+	// one of the level's spare coins brought to where a gingerbread man ended, a little up off the ground
+	void dropCoin(V at)
+	{
+		if (nextCoin >= gingerCoins.size() || !game().object_set_position)
+			return;
+		SmsVec3 p = {at.x, at.y + 60, at.z};
+		game().object_set_position(gingerCoins[nextCoin++], &p);
+	}
 	// a sound where he is (the game's own, Mario's ear hearing it from there)
 	void sound(uint32_t id, V at)
 	{
@@ -1694,6 +1704,14 @@ struct ChristmasAdditions : sms::Mod {
 				gingers.push_back(g);
 			}
 			if (!gingers.empty()) {
+				gingerCoins.clear(), nextCoin = 0;
+				for (int i = 0; i < 64; i++) {
+					char name[32];
+					snprintf(name, sizeof name, "Gingerbread coin %d", i);
+					if (SmsObject c = game().find_object(name))
+						gingerCoins.push_back(c);
+				}
+				info("%d coins for them to drop", (int)gingerCoins.size());
 				gingerLooks = 99;
 				info("%d gingerbread men", (int)gingers.size());
 			}
@@ -1712,7 +1730,7 @@ struct ChristmasAdditions : sms::Mod {
 			if (g.dying > 0) { // his end: drawn as it goes, then gone
 				g.dying += dt;
 				if (g.dying >= 1.2f)
-					g.dying = 0, g.gone = 30;
+					g.dying = 0, g.gone = 30, dropCoin(g.at); // however he went, a coin where he was
 				else
 					drawGinger(g, 0);
 				continue;
@@ -1743,7 +1761,7 @@ struct ChristmasAdditions : sms::Mod {
 			if (hitNow) {
 				g.wet += dt * 2.0f; // (the stream reaches him a tick in two)
 				if (g.hiss <= 0)
-					sound(0x2881, g.at), g.hiss = 0.35f; // MSD_SE_EN_POIHANA_WATER_HIT
+					sound(0x291E, g.at), g.hiss = 0.35f; // MSD_SE_EN_TORI_WATER_HIT (a light splash: the Poihana's was a deep bass, Allebale)
 				if (g.drip <= 0) { // dripping: a little puddle of sugary water by his feet now and then
 					const float a = frand(g.seed) * 2 * kPi, rr = frand(g.seed) * 30;
 					addPuddle(v(g.at.x + rr * sinf(a), g.at.y, g.at.z + rr * cosf(a)), 26 + frand(g.seed) * 16, 9, 0.4f,
@@ -1772,7 +1790,7 @@ struct ChristmasAdditions : sms::Mod {
 			if (fierce && d2 < 75.0f * 75.0f && mdy > 110 && mdy < 270 && p.velocity.y < 0) {
 				g.dying = 0.001f, g.dieKind = 0;
 				addPuff(add(g.at, v(0, 90, 0)), 50);
-				sound(0x3888, g.at); // MSD_SE_OBJ_WATERMELON_CRASH: a crunch
+				sound(0x2803, g.at); // MSD_SE_EN_COMMON_DEAD (the watermelon's crash was too deep)
 				addPuddle(g.at, 70, 20, 0.5f, kDough, 220, g.seed); // what is left of him on the ground
 				sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
 				SmsVec3 up = p.velocity;
@@ -2192,7 +2210,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0, puddles.clear(); }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
