@@ -335,10 +335,29 @@ void bombKey(Mesh& m) // the wind-up key in its back, turning about y
 		m.tube(c, r, kBaubleGold, 6, false);
 	}
 }
-void bombShard(Mesh& m, Rgb col) // a curved bit of glass
+// a curved piece of its glass, a sixth of the ball round +x (half-angle 58 degrees, so six of them together, round
+// up, down and four ways about, make it whole): coloured outside, silvery inside, its broken edge between
+void bombPiece(Mesh& m, Rgb col)
 {
-	const V a = v(0, 0, 0), b = v(0.42f, 0.04f, 0), c = v(0.12f, 0.36f, 0.04f), d = v(0.16f, 0.12f, 0.12f);
-	m.tri(a, b, c, col), m.tri(a, c, d, col), m.tri(b, d, c, col), m.tri(a, d, b, col);
+	const int rings = 5, seg = 14;
+	const float edge = 58.0f * kPi / 180, in = 0.93f;
+	const Rgb inside = {205, 212, 224}, rim = {235, 240, 248};
+	auto at = [&](int i, int k, float r) {
+		const float th = edge * i / rings, ph = 2 * kPi * k / seg;
+		// a ragged broken edge: the last ring wobbles
+		const float th2 = i == rings ? th * (0.9f + 0.1f * sinf(ph * 3 + 1.3f) + 0.05f * sinf(ph * 7)) : th;
+		return mul(v(cosf(th2), sinf(th2) * cosf(ph), sinf(th2) * sinf(ph)), r);
+	};
+	for (int i = 0; i < rings; i++)
+		for (int k = 0; k < seg; k++) {
+			const int k2 = (k + 1) % seg;
+			m.quad(at(i, k, 1), at(i + 1, k, 1), at(i + 1, k2, 1), at(i, k2, 1), col);           // outside
+			m.quad(at(i, k2, in), at(i + 1, k2, in), at(i + 1, k, in), at(i, k, in), inside);  // inside
+		}
+	for (int k = 0; k < seg; k++) { // the edge
+		const int k2 = (k + 1) % seg;
+		m.quad(at(rings, k, 1), at(rings, k, in), at(rings, k2, in), at(rings, k2, 1), rim);
+	}
 }
 
 // Gingerbread men (the mod's own, walking about where a level marks with invisible coins named "Gingerbread N"):
@@ -1110,7 +1129,7 @@ struct ChristmasAdditions : sms::Mod {
 	std::vector<Bomb> bombs;              // the level's bauble Bob-ombs, this stage
 	double bombClock = -1;
 	int baubleLooks = 0;
-	SmsMesh bombLook[8] = {}, bombFlash = 0, bombShardMesh = 0, bombFootMesh = 0, bombKeyMesh = 0;
+	SmsMesh bombLook[8] = {}, bombPieces[8] = {}, bombFlash = 0, bombFootMesh = 0, bombKeyMesh = 0;
 
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
@@ -1888,7 +1907,7 @@ struct ChristmasAdditions : sms::Mod {
 				b.shatter += dt;
 				if (show[i])
 					drawShatter(b);
-				if (b.shatter > 1.0f)
+				if (b.shatter > 1.6f)
 					b.shatter = 0, b.gone = 25, dropCoin(b.at);
 				continue;
 			}
@@ -1995,24 +2014,59 @@ struct ChristmasAdditions : sms::Mod {
 			draw(bombFootMesh, fm);
 		}
 	}
-	// jumped on: shards of its glass flying out and falling, spinning, with its cap
+	// jumped on: the bauble breaking apart, as glass does: six curved pieces of it (whole at first) bursting out
+	// from its middle and up, tumbling, falling to the ground and lying there a moment before they go; its key
+	// flung off backwards, its feet toppling where it stood
 	void drawShatter(const Bomb& b)
 	{
 		const float k = b.shatter, R = kBombR;
+		const V fwd = v(sinf(b.yaw), 0, cosf(b.yaw)), right = v(cosf(b.yaw), 0, -sinf(b.yaw)), up = v(0, 1, 0);
 		const V mid = add(b.at, v(0, kBombFootY + R, 0));
+		const V dirs[6] = {up, mul(up, -1), fwd, mul(fwd, -1), right, mul(right, -1)};
+		const float shrink = k > 1.3f ? (1.6f - k) / 0.3f : 1.0f; // gone over its last 0.3 s
 		unsigned h = 31u * (unsigned)(b.look + 1);
-		for (int i = 0; i < 7; i++) {
-			const float a = frand(h) * 2 * kPi, e = 0.2f + frand(h) * 1.0f, sp = 180 + frand(h) * 220, spin = 4 + frand(h) * 10;
-			const V dir = v(cosf(a) * cosf(e), sinf(e), sinf(a) * cosf(e));
-			V at = add(mid, mul(dir, R * 0.7f + sp * k));
-			at.y -= 0.5f * 1400 * k * k;
-			if (at.y < b.at.y + 4)
-				at.y = b.at.y + 4;
-			const float sc = R * (0.55f + 0.4f * frand(h)) * (k > 0.7f ? (1 - k) / 0.3f : 1.0f);
-			const float c = cosf(spin * k + a), sn = sinf(spin * k + a);
-			const V x = v(c, sn * 0.6f, -sn), y = norm(cross(v(0.3f, 1, 0.2f), x)), z = cross(x, y);
+		for (int i = 0; i < 6; i++) {
+			const float sp = 160 + frand(h) * 140, lift = 220 + frand(h) * 160, spin = (frand(h) - 0.5f) * 22;
+			V d = dirs[i];
+			V vel = add(mul(d, sp), v(0, i == 1 ? 60 : lift, 0)); // out from the middle, and up
+			V at = add(mid, mul(vel, k));
+			at.y -= 0.5f * 1600 * k * k;
+			const float floor = b.at.y + 4 + (i == 1 ? 0 : 8);
+			bool down = false;
+			if (at.y < floor)
+				at.y = floor, down = true;
+			// tumbling about an axis across its way out, till it lands
+			V ax = norm(cross(d, fabsf(d.y) > 0.9f ? fwd : up));
+			const float ang = spin * (down ? fminf(k, 0.35f) : k);
+			const float c = cosf(ang), sn = sinf(ang);
+			// d turned about ax (Rodrigues)
+			V x = add(add(mul(d, c), mul(cross(ax, d), sn)), mul(ax, dot(ax, d) * (1 - c)));
+			if (down) // lying on the ground: curved side up
+				x = norm(add(mul(x, 0.3f), up));
+			const V y = norm(cross(x, fabsf(x.y) > 0.9f ? fwd : up)), z = cross(x, y);
+			const float sc = R * shrink;
 			const float m[3][4] = {{x.x * sc, y.x * sc, z.x * sc, at.x}, {x.y * sc, y.y * sc, z.y * sc, at.y}, {x.z * sc, y.z * sc, z.z * sc, at.z}};
-			draw(bombShardMesh, m);
+			draw(bombPieces[b.look % 8], m);
+		}
+		// its key: flung off backwards, spinning
+		{
+			V at = add(mid, add(mul(fwd, -(R + 160 * k)), v(0, 260 * k - 800 * k * k, 0)));
+			if (at.y < b.at.y + 6)
+				at.y = b.at.y + 6;
+			const float ang = 18 * k, c = cosf(ang), sn = sinf(ang), sc = R * shrink;
+			const V ku = add(mul(up, c), mul(right, sn)), kr = sub(mul(right, c), mul(up, sn));
+			const V o = mul(fwd, R * 1.1f); // (the key sits 1.1 behind the middle in its model: brought back to here)
+			const float km[3][4] = {{ku.x * sc, fwd.x * sc, kr.x * sc, at.x + o.x}, {ku.y * sc, fwd.y * sc, kr.y * sc, at.y + o.y}, {ku.z * sc, fwd.z * sc, kr.z * sc, at.z + o.z}};
+			draw(bombKeyMesh, km);
+		}
+		// its feet: left standing, then toppling over outwards
+		for (int s = -1; s <= 1; s += 2) {
+			const float tip = fminf(k * 3, 1.0f) * 1.3f * s;
+			const V fu = add(mul(up, cosf(tip)), mul(right, sinf(tip))), fr = sub(mul(right, cosf(tip)), mul(up, sinf(tip)));
+			const V at = add(b.at, add(mul(right, 0.42f * R * s), v(0, 0.16f * R, 0)));
+			const float sc = R * shrink;
+			const float fm[3][4] = {{fu.x * sc, fwd.x * sc, fr.x * sc, at.x}, {fu.y * sc, fwd.y * sc, fr.y * sc, at.y}, {fu.z * sc, fwd.z * sc, fr.z * sc, at.z}};
+			draw(bombFootMesh, fm);
 		}
 	}
 	// a ball of fire (camera-facing soft dots, yellow at its heart, orange to red outside), 0.7 s long
@@ -2588,14 +2642,15 @@ struct ChristmasAdditions : sms::Mod {
 				baubleCap(lm);
 				bombFace(lm);
 				bombLook[k] = api().models->create(handle(), &lm.corners[0], (int)lm.corners.size());
-			}
-			Mesh wm, sm, ft, ky;
+				Mesh pm;
+				bombPiece(pm, kBaubleBody[k]);
+				bombPieces[k] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
+				}
+			Mesh wm, ft, ky;
 			wm.sphere(v(0, 0, 0), 1.02f, kBaubleBody[8], 16, 12);
 			baubleCap(wm);
-			bombShard(sm, {228, 236, 246});
 			bombFoot(ft), bombKey(ky);
 			bombFlash     = api().models->create(handle(), &wm.corners[0], (int)wm.corners.size());
-			bombShardMesh = api().models->create(handle(), &sm.corners[0], (int)sm.corners.size());
 			bombFootMesh  = api().models->create(handle(), &ft.corners[0], (int)ft.corners.size());
 			bombKeyMesh   = api().models->create(handle(), &ky.corners[0], (int)ky.corners.size());
 			if (!bombLook[7] || !bombKeyMesh)
