@@ -2402,14 +2402,27 @@ struct ChristmasAdditions : sms::Mod {
 			m[2][0] = ax.z, m[2][1] = ay.z, m[2][2] = az.z, m[2][3] = at.z;
 		};
 		// flying apart: a piece pushed out its way and up, falling, tumbling
-		auto fly = [&](V at, V way, float spin, float& swingX, float& outZ) -> V {
+		// Once down, it lies flat on its back on the ground (its frame's origin `rest` above it), where it landed,
+		// settling there over 0.15 s; before, its origin was held off the ground but the piece kept standing up from
+		// it, so his body hung in the air (Allebale).
+		auto fly = [&](V at, V way, float spin, float rest, float& swingX, float& outZ) -> V {
 			if (burst < 0)
 				return at;
 			const float t = burst * 1.05f;
-			V o = add(mul(way, 260.0f * t), v(0, 330.0f * t - 900.0f * t * t, 0));
-			if (o.y < -at.y + g.at.y + 5)
-				o.y = -at.y + g.at.y + 5; // not through the ground
-			swingX += spin * t * 9, outZ += spin * t * 5;
+			// when it comes down to the ground: 330 t - 900 t^2 = drop (the later root)
+			const float drop = g.at.y + rest - at.y;
+			const float disc = 330.0f * 330.0f - 4 * 900.0f * drop;
+			const float land = disc > 0 ? (330.0f + sqrtf(disc)) / 1800.0f : 0.0f;
+			const float tt = t < land ? t : land;
+			V o = add(mul(way, 260.0f * tt), v(0, 330.0f * tt - 900.0f * tt * tt, 0));
+			const float sx = swingX + spin * tt * 9, oz = outZ + spin * tt * 5;
+			if (t < land) {
+				swingX = sx, outZ = oz;
+				return add(at, o);
+			}
+			const float k = fminf((t - land) / 0.15f, 1.0f); // settling flat
+			swingX = sx + (-1.5708f - sx) * k, outZ = oz * (1 - k);
+			o.y = drop;
 			return add(at, o);
 		};
 		float m[3][4];
@@ -2417,13 +2430,13 @@ struct ChristmasAdditions : sms::Mod {
 		if (g.dieKind == 2 && g.dying > 0.4f) // sliding down the wall
 			base.y -= 60.0f * (g.dying - 0.4f) * (g.dying - 0.4f) * 3.0f;
 		float bx = 0, bz = 0;
-		frame(m, fly(base, v(0, 0.3f, 0), 0.4f, bx, bz), bx, bz);
+		frame(m, fly(base, v(0, 0.3f, 0), 0.4f, 23.0f * sw, bx, bz), bx, bz);
 		draw(gBody, m);
 		for (int side = 0; side < 2; side++) {
 			const float sgn = side ? 1.0f : -1.0f;
 			V hip = add(base, add(mul(right, kHipX * sgn * sw), mul(up, kHipY * sy)));
 			float lx = swing * (side ? 1 : -1), lz = 0.6f * spread * sgn;
-			V hipAt = fly(hip, add(mul(right, sgn * 0.8f), mul(fwd, 0.3f)), sgn, lx, lz);
+			V hipAt = fly(hip, add(mul(right, sgn * 0.8f), mul(fwd, 0.3f)), sgn, 12.0f * sw, lx, lz);
 			frame(m, hipAt, lx, lz);
 			draw(gLeg[side], m);
 			V shoulder = add(base, add(mul(right, kShoulderX * sgn * sw), mul(up, kShoulderY * sy)));
@@ -2434,7 +2447,7 @@ struct ChristmasAdditions : sms::Mod {
 				armSwing = -2.0f, armOut = 0.4f * sgn;
 			if (spread > 0) // splatted: arms flung out wide
 				armSwing = 0, armOut = 1.3f * spread * sgn;
-			V shAt = fly(shoulder, add(mul(right, sgn * 1.0f), mul(fwd, -0.4f)), -sgn, armSwing, armOut);
+			V shAt = fly(shoulder, add(mul(right, sgn * 1.0f), mul(fwd, -0.4f)), -sgn, 11.0f * sw, armSwing, armOut);
 			frame(m, shAt, armSwing, armOut);
 			draw(gArm[side], m);
 		}
