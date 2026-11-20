@@ -241,6 +241,62 @@ void snowmanArms(Mesh& m)
 	}
 }
 
+// Bob-ombs dressed as Christmas baubles (the level names them "Bauble ..."): in a frame round the body's middle,
+// x up, the body 1 round. A cap and its loop on top, and one of five patterns, each in its own colour.
+const Rgb kSilver = {214, 220, 230}, kBaubleGold = {236, 190, 60};
+void baubleCap(Mesh& m)
+{
+	m.cylinder(v(0.9f, 0, 0), v(1.16f, 0, 0), 0.30f, 0.27f, kBaubleGold, 14);
+	m.torus(0.94f, 0.31f, 0.035f, kBaubleGold, 16, 6);
+	std::vector<V> loop;
+	std::vector<float> r;
+	for (int i = 0; i <= 16; i++) {
+		float t = kPi * 2 * i / 16;
+		loop.push_back(v(1.28f + 0.12f * cosf(t + kPi), 0.12f * sinf(t), 0));
+		r.push_back(0.032f);
+	}
+	m.tube(loop, r, kBaubleGold, 8, false);
+}
+void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
+{
+	switch (kind) {
+	case 0: // one wide band round the middle
+		m.torus(0, 1.0f, 0.09f, a, 32, 8);
+		break;
+	case 1: // two thin bands
+		for (int s = -1; s <= 1; s += 2)
+			m.torus(0.38f * s, sqrtf(1 - 0.38f * 0.38f), 0.05f, a, 32, 6);
+		break;
+	case 2: { // dots all over
+		unsigned h = 7u;
+		for (int i = 0; i < 22; i++) {
+			h = h * 1103515245u + 12345u;
+			float up = -60 + 120.0f * ((h >> 8) & 1023) / 1023.0f;
+			h = h * 1103515245u + 12345u;
+			float side = 360.0f * ((h >> 8) & 1023) / 1023.0f;
+			m.sphere(onBall(v(0, 0, 0), 1.0f, up, side), 0.07f, i % 2 ? a : b, 6, 4);
+		}
+		break;
+	}
+	case 3: // a zigzag of little beads round the middle
+		for (int i = 0; i < 24; i++)
+			m.sphere(onBall(v(0, 0, 0), 1.01f, (i % 2 ? 12.0f : -12.0f), 15.0f * i), 0.06f, a, 6, 4);
+		m.torus(0.55f, sqrtf(1 - 0.55f * 0.55f), 0.035f, b, 28, 5);
+		m.torus(-0.55f, sqrtf(1 - 0.55f * 0.55f), 0.035f, b, 28, 5);
+		break;
+	default: // stripes from top to bottom
+		for (int k = 0; k < 8; k++) {
+			std::vector<V> c;
+			std::vector<float> r;
+			for (int i = 0; i <= 12; i++) {
+				c.push_back(onBall(v(0, 0, 0), 1.005f, -80.0f + 160.0f * i / 12, 45.0f * k));
+				r.push_back(0.045f);
+			}
+			m.tube(c, r, k % 2 ? a : b, 6, false);
+		}
+	}
+}
+
 // Rudolph's antlers, ears and nose. Made in Yoshi's model's own rest pose (yoshi_model.bmd: x his left,
 // y up, z forward; feet at 0, the top of his head at about 168, the tip of his snout at z 63, its nose
 // point null_nose at 0 144 56), then put into his head joint's frame ("jnt_head", at 0 101 0 at rest:
@@ -885,6 +941,9 @@ struct ChristmasAdditions : sms::Mod {
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	std::set<SmsObject> bare;           // Piantas whose own hat and leaf hair are off under the Santa hat, this stage
+	std::set<SmsObject> baubled;        // Bob-omb baubles tinted, this stage
+	SmsMesh baubleCapMesh = 0, baublePat[5][4] = {};
+	bool baubleLogged = false;
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
@@ -1483,6 +1542,48 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
+		// Bob-omb baubles: each its own colour (the whole Bob-omb tinted, shading kept), a cap and loop on top
+		// and one of five patterns, picked by its number
+		if (setting("baubles", 1)) {
+			int n = api().actor->near(&p.position, 9000.0f, SMS_ACTOR_FLAG_SMALL_ENEMY, found, 160);
+			if (n > 160)
+				n = 160;
+			static const SmsColor kBody[8] = {0xC81E28E0u, 0x2F5FD0E0u, 0x23964BE0u, 0xE6B43CE0u, 0x8C3CB4E0u, 0xD2D7E1E0u, 0xE65AA0E0u, 0x2AAAB4E0u};
+			for (int i = 0; i < n; i++) {
+				SmsObject o = found[i];
+				const char* nm = game().object_name ? game().object_name(o) : nullptr;
+				if (!nm || strncmp(nm, "Bauble", 6))
+					continue;
+				const int k = atoi(nm + 6);
+				if (!baubled.count(o) && game().object_set_tint) {
+					game().object_set_tint(o, kBody[k % 8]);
+					baubled.insert(o);
+				}
+				float rad = 0, tall = 0;
+				if (!api().actor->hit_size || !api().actor->hit_size(o, &rad, &tall) || rad <= 0)
+					continue;
+				SmsVec3 at;
+				if (!game().object_position || !game().object_position(o, &at))
+					continue;
+				if (!baubleLogged) { // what the body looks like to this mod, for fitting it better
+					baubleLogged = true;
+					info("bauble Bob-omb: hit radius %.0f, height %.0f; %d materials, %d joints", rad, tall,
+					     parts->material_count(o), parts->joint_count(o));
+					for (int j = 0; j < parts->material_count(o); j++)
+						info("  material %s", parts->material_name(o, j));
+					for (int j = 0; j < parts->joint_count(o); j++) {
+						float jm[3][4];
+						if (parts->joint(o, parts->joint_name(o, j), jm))
+							info("  joint %s at %.0f %.0f %.0f", parts->joint_name(o, j), jm[0][3] - at.x, jm[1][3] - at.y, jm[2][3] - at.z);
+					}
+				}
+				const float R = rad, cy = at.y + tall * 0.5f;
+				const float m[3][4] = {{0, 0, R, at.x}, {R, 0, 0, cy}, {0, R, 0, at.z}}; // x up, y along world z, z along world x
+				draw(baubleCapMesh, m);
+				draw(baublePat[(k / 8 + k) % 5][(k * 3) % 4], m);
+			}
+		}
+
 		// snowmen
 		if (snowmen) {
 			int n = api().actor->near(&p.position, 9000.0f, SMS_ACTOR_FLAG_SMALL_ENEMY, found, 160);
@@ -1563,6 +1664,7 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
 		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
+		optionBool("baubles", "Bob-ombs a level names Bauble look like Christmas baubles", true);
 		// FLUDD Weapons loading (now or later): told again
 		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
 			if (e.id && !strcmp(e.id, "fludd-weapons"))
@@ -1629,10 +1731,23 @@ struct ChristmasAdditions : sms::Mod {
 		fluddDeco = make(fluddRibbon);
 		hat     = make(santaHat);
 		head    = make(snowmanHead);
+		{
+			Mesh cap;
+			baubleCap(cap);
+			baubleCapMesh = api().models->create(handle(), &cap.corners[0], (int)cap.corners.size());
+			for (int k = 0; k < 5; k++)
+				for (int c = 0; c < 4; c++) {
+					static const Rgb kA[4] = {kBaubleGold, kSilver, {255, 255, 255}, {200, 30, 40}};
+					static const Rgb kB[4] = {{255, 255, 255}, kBaubleGold, kSilver, kBaubleGold};
+					Mesh pm;
+					baublePattern(pm, k, kA[c], kB[c]);
+					baublePat[k][c] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
+				}
+		}
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(); }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(); }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
