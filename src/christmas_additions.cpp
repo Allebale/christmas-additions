@@ -212,6 +212,11 @@ void snowmanHead(Mesh& m)
 	m.cylinder(v(x0, 0, 0), v(x0 + 5, 0, 0), 48, 48, kHat, 20);
 	m.cylinder(v(x0 + 5, 0, 0), v(x0 + 60, 0, 0), 32, 33, kHat, 20);
 	m.cylinder(v(x0 + 5, 0, 0), v(x0 + 15, 0, 0), 33.5f, 33.5f, kBand, 20);
+	// snow on the hat: a soft cap on its top, a little lip over its edge, and a ring on the brim
+	m.cylinder(v(x0 + 59, 0, 0), v(x0 + 65, 0, 0), 35, 31, kWhite, 20);
+	m.cylinder(v(x0 + 65, 0, 0), v(x0 + 69, 0, 0), 31, 22, kWhite, 20);
+	m.torus(x0 + 60, 33, 3, kWhite, 24, 6);
+	m.torus(x0 + 6, 42, 3.5f, kWhite, 24, 6);
 	// a scarf where it meets the ball below, its end hanging at the front
 	m.torus(kBall.x - kR * 0.72f, 46, 10, kScarf);
 	V knot = v(kBall.x - kR * 0.72f, 40, 22);
