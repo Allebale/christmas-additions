@@ -302,6 +302,7 @@ void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
 // (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
 // thickness. Each piece hangs from its joint: the body and head, two arms (from the shoulder), two legs (hip).
 const Rgb kCookie = {178, 104, 46}, kIcing = {250, 250, 252}, kGumRed = {214, 36, 48}, kGumGreen = {44, 168, 70}, kChoc = {52, 30, 20};
+const Rgb kDough = {150, 86, 38}, kSyrup = {205, 170, 120}; // melted gingerbread; water gone sweet off him
 const float kHipY = 86, kShoulderY = 146, kHipX = 19, kShoulderX = 33, kHeadR = 37;
 const Rgb kCheek = {236, 120, 120};
 // a wavy line of icing across a limb's front, round `at`, `w` wide
@@ -945,6 +946,29 @@ std::vector<uint8_t> printPicture()
 	return px;
 }
 
+// a puddle seen from above: a ragged round edge, a little darker rim, a soft shine off centre;
+// grey, so its corners give it its colour (water, or melted dough)
+std::vector<uint8_t> puddlePicture(int w)
+{
+	std::vector<uint8_t> px(w * w * 4);
+	for (int y = 0; y < w; y++)
+		for (int x = 0; x < w; x++) {
+			float u = (x + 0.5f) / w * 2 - 1, vv = (y + 0.5f) / w * 2 - 1;
+			float ang = atan2f(vv, u), r = sqrtf(u * u + vv * vv);
+			float edge = 0.78f + 0.08f * sinf(ang * 3 + 0.7f) + 0.05f * sinf(ang * 5 + 2.1f) + 0.03f * sinf(ang * 9);
+			float d = r / edge; // under 1 inside
+			float a = 1 - smooth01(0.9f, 1.0f, d);
+			float rim = smooth01(0.7f, 0.97f, d);
+			float sx = u + 0.3f, sy = vv + 0.3f;
+			float shine = expf(-(sx * sx + sy * sy) / 0.03f) * 0.5f;
+			float c = 205 - 55 * rim + 50 * shine;
+			c = c > 255 ? 255 : c;
+			uint8_t* p = &px[(y * w + x) * 4];
+			p[0] = p[1] = p[2] = (uint8_t)c, p[3] = (uint8_t)(a * (0.8f + 0.2f * rim) * 255);
+		}
+	return px;
+}
+
 std::vector<uint8_t> softDot(int w, float hard)
 {
 	std::vector<uint8_t> px(w * w * 4);
@@ -965,6 +989,11 @@ struct Print {
 struct Puff {
 	V p;
 	float born, size;
+};
+struct Puddle { // left by a gingerbread man: spreading out, staying a while, then drying away
+	V p;
+	float born, size, life, yaw, grow;
+	uint8_t r, g, b, a;
 };
 struct Flake {
 	V at; // where it starts in the box round the camera
@@ -1008,7 +1037,7 @@ struct ChristmasAdditions : sms::Mod {
 		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
 		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
 		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (3 melts him); trembling; his end so far
-		float hiss = 0, dry = 0;             // till the next splash sound; till he starts drying off
+		float hiss = 0, dry = 0, drip = 0;   // till the next splash sound; till he starts drying off; next drip
 		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
 		bool chasing = false;
 		unsigned seed = 1;
@@ -1027,7 +1056,8 @@ struct ChristmasAdditions : sms::Mod {
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
 	// ---------------------------------------------------------------- snow
-	SmsTexture printTex = 0, puffTex = 0, flakeTex = 0;
+	SmsTexture printTex = 0, puffTex = 0, flakeTex = 0, puddleTex = 0;
+	std::vector<Puddle> puddles;
 	bool snowyGround = false, snowfall = false; // this stage's markers
 	int markerLooks = 0;                         // looked for them this many times this stage
 	float now = 0;
@@ -1598,6 +1628,40 @@ struct ChristmasAdditions : sms::Mod {
 			g.at.y = gr.floor;
 		return moved >= (speed * dt * 0.3f) * (speed * dt * 0.3f);
 	}
+	void addPuddle(V at, float size, float life, float grow, Rgb col, uint8_t a, unsigned& seed)
+	{
+		if (puddles.size() >= 64)
+			puddles.erase(puddles.begin());
+		Puddle pd = {at, now, size, life, frand(seed) * 2 * kPi, grow, col.r, col.g, col.b, a};
+		puddles.push_back(pd);
+	}
+	// the puddles, lying flat on the ground where they were left
+	void drawPuddles()
+	{
+		while (!puddles.empty() && now - puddles[0].born > puddles[0].life)
+			puddles.erase(puddles.begin());
+		if (puddles.empty() || !SMS_API_HAS(&api(), models) || !api().models->draw_textured)
+			return;
+		if (!puddleTex && api().models->texture_create) {
+			std::vector<uint8_t> px = puddlePicture(64);
+			puddleTex = api().models->texture_create(handle(), &px[0], 64, 64);
+		}
+		if (!puddleTex)
+			return;
+		std::vector<SmsTexCorner> c;
+		for (size_t i = 0; i < puddles.size(); i++) {
+			const Puddle& pd = puddles[i];
+			const float age = now - pd.born;
+			float s = pd.size * (age < pd.grow ? 0.25f + 0.75f * age / pd.grow : 1.0f);
+			float fade = pd.life - age < 3 ? (pd.life - age) / 3 : 1.0f; // drying away over its last 3 s
+			s *= 0.85f + 0.15f * fade;
+			V f = mul(v(sinf(pd.yaw), 0, cosf(pd.yaw)), s), r = mul(v(cosf(pd.yaw), 0, -sinf(pd.yaw)), s);
+			V p = add(pd.p, v(0, 1.5f + 0.01f * (float)i, 0));
+			quad(c, add(sub(p, r), f), add(add(p, r), f), sub(add(p, r), f), sub(sub(p, r), f), pd.r, pd.g, pd.b,
+			     (uint8_t)(pd.a * fade));
+		}
+		api().models->draw_textured(&c[0], (int)c.size(), puddleTex, SMS_BLEND_ALPHA);
+	}
 	// a sound where he is (the game's own, Mario's ear hearing it from there)
 	void sound(uint32_t id, V at)
 	{
@@ -1680,17 +1744,24 @@ struct ChristmasAdditions : sms::Mod {
 				g.wet += dt * 2.0f; // (the stream reaches him a tick in two)
 				if (g.hiss <= 0)
 					sound(0x2881, g.at), g.hiss = 0.35f; // MSD_SE_EN_POIHANA_WATER_HIT
+				if (g.drip <= 0) { // dripping: a little puddle of sugary water by his feet now and then
+					const float a = frand(g.seed) * 2 * kPi, rr = frand(g.seed) * 30;
+					addPuddle(v(g.at.x + rr * sinf(a), g.at.y, g.at.z + rr * cosf(a)), 26 + frand(g.seed) * 16, 9, 0.4f,
+					          kSyrup, 150, g.seed);
+					g.drip = 0.3f;
+				}
 				g.hurt = 0.25f;
 				g.dry  = 4.0f;
 				g.chasing = true;   // and he is cross
 				if (g.wet >= 3.0f) {
 					g.dying = 0.001f, g.dieKind = 1;
 					sound(0x283A, g.at); // MSD_SE_EN_MAMEGESO_MELT
+					addPuddle(g.at, 95, 25, 1.2f, kDough, 230, g.seed); // all of him, spreading as he goes down
 					info("a gingerbread man melted");
 					continue;
 				}
 			}
-			g.hurt -= dt, g.hiss -= dt, g.dry -= dt;
+			g.hurt -= dt, g.hiss -= dt, g.dry -= dt, g.drip -= dt;
 			if (g.dry <= 0 && g.wet > 0) // left alone a while: he dries off again
 				g.wet = std::max(0.0f, g.wet - dt * 0.3f);
 			g.cool -= dt, g.swing -= dt;
@@ -1702,6 +1773,7 @@ struct ChristmasAdditions : sms::Mod {
 				g.dying = 0.001f, g.dieKind = 0;
 				addPuff(add(g.at, v(0, 90, 0)), 50);
 				sound(0x3888, g.at); // MSD_SE_OBJ_WATERMELON_CRASH: a crunch
+				addPuddle(g.at, 70, 20, 0.5f, kDough, 220, g.seed); // what is left of him on the ground
 				sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
 				SmsVec3 up = p.velocity;
 				up.y = 28;
@@ -1759,11 +1831,12 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 			const float before = g.phase;
-			g.phase += dt * g.speed * 0.045f;
-			if (g.speed > 1 && floorf(g.phase / kPi) != floorf(before / kPi)) // a foot down
-				sound(0x2839, g.at); // MSD_SE_EN_HMKRI_WALK
-			drawGinger(g, g.speed);
-		}
+				g.phase += dt * g.speed * 0.045f;
+				if (g.speed > 1 && floorf(g.phase / kPi) != floorf(before / kPi)) // a foot down
+					sound(0x2839, g.at); // MSD_SE_EN_HMKRI_WALK
+				drawGinger(g, g.speed);
+			}
+			drawPuddles();
 	}
 	// one gingerbread man drawn: walking (his limbs swinging), hit by water (trembling, melting lower and wider
 	// as he soaks), jumped on (squashed, then his pieces flying apart and falling) or melted away
@@ -2119,7 +2192,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0; }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0, puddles.clear(); }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
