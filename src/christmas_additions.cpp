@@ -1059,7 +1059,8 @@ struct Bomb { // a bauble Bob-omb
 	float fuse = 0;     // lit: seconds left (0 not lit)
 	float wet = 0;      // put out by water: sitting it out
 	float boom = 0;     // exploding: seconds into it
-	float shatter = 0;  // jumped on: seconds into its glass flying apart
+	float shatter = 0;  // jumped on (or pushed into a wall): seconds into its glass flying apart
+	V push = {0, 0, 0}; // pushed by the water: how fast, which way (units a second)
 	float gone = 0;     // till it is back home
 	int look = 0;       // colour and pattern
 	unsigned seed = 1;
@@ -1781,7 +1782,7 @@ struct ChristmasAdditions : sms::Mod {
 		return v(p.position.x, p.position.y, p.position.z);
 	}
 	// FLUDD's flying water passing through a round space at `at` (its drops used up on it): any this tick
-	bool sprayHit(V at, float rad, float lo, float hi)
+	bool sprayHit(V at, float rad, float lo, float hi, float* wayX = nullptr, float* wayZ = nullptr)
 	{
 		const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
 		if (!wa || !wa->count || !wa->get)
@@ -1798,6 +1799,9 @@ struct ChristmasAdditions : sms::Mod {
 			const float dx = wd.position.x - at.x, dz = wd.position.z - at.z, dy = wd.position.y - at.y;
 			if (sp2 > 8.0f * 8.0f && dx * dx + dz * dz < rad * rad && dy > lo && dy < hi) {
 				hit = true;
+				const float hv = sqrtf(wd.velocity.x * wd.velocity.x + wd.velocity.z * wd.velocity.z);
+				if (wayX && wayZ && hv > 0.01f) // the way the water flies, added up
+					*wayX += wd.velocity.x / hv, *wayZ += wd.velocity.z / hv;
 				wd.alive = 0;
 				if (wa->set)
 					wa->set(k, &wd);
@@ -1924,10 +1928,40 @@ struct ChristmasAdditions : sms::Mod {
 				continue;
 			}
 			// water on it: its fuse out, and it sits a while, shaking it off
-			if (sprayHit(b.at, 60, 0, 2.2f * kBombR + kBombFootY + 30)) {
+			float wx = 0, wz = 0;
+			if (sprayHit(b.at, 60, 0, 2.2f * kBombR + kBombFootY + 30, &wx, &wz)) {
 				if (b.fuse > 0)
 					sound(0x2880, mid); // MSD_SE_EN_BOMBHEI_SPARK_END
 				b.fuse = 0, b.wet = 4.0f;
+				const float wl = sqrtf(wx * wx + wz * wz); // and pushed along by it, as the gingerbread men are
+				if (wl > 0.01f) {
+					b.push.x += wx / wl * 6500.0f * dt, b.push.z += wz / wl * 6500.0f * dt;
+					const float sp = sqrtf(b.push.x * b.push.x + b.push.z * b.push.z);
+					if (sp > 1050.0f)
+						b.push = mul(b.push, 1050.0f / sp);
+				}
+			}
+			if (b.push.x * b.push.x + b.push.z * b.push.z > 1.0f) {
+				SmsVec3 want3 = {b.at.x + b.push.x * dt, b.at.y + 50, b.at.z + b.push.z * dt}, out = want3;
+				if (game().out_of_walls)
+					game().out_of_walls(&want3, 40.0f, &out, nullptr);
+				const float sp = sqrtf(b.push.x * b.push.x + b.push.z * b.push.z);
+				const float ox = out.x - want3.x, oz = out.z - want3.z, ol = sqrtf(ox * ox + oz * oz);
+				if (sp > 180.0f && ol > sp * dt * 0.5f) { // pushed into a wall fast enough: it breaks (Allebale)
+					b.at.x = out.x, b.at.z = out.z;
+					b.shatter = 0.001f, b.fuse = 0, b.push = v(0, 0, 0);
+					sound(0x3857, add(b.at, v(0, kBombFootY + kBombR, 0))); // MSD_SE_OBJ_GLASS_BREAK
+					addPuff(add(b.at, v(0, kBombFootY + kBombR, 0)), 30);
+					continue;
+				}
+				b.at.x = out.x, b.at.z = out.z;
+				SmsGround gr;
+				memset(&gr, 0, sizeof gr);
+				gr.size = sizeof gr;
+				SmsVec3 probe = {b.at.x, b.at.y + 120, b.at.z};
+				if (game().ground && game().ground(&probe, &gr) && fabsf(gr.floor - b.at.y) < 200)
+					b.at.y = gr.floor;
+				b.push = mul(b.push, expf(-3.5f * dt));
 			}
 			b.wet -= dt;
 			b.speed = 0;
@@ -2216,10 +2250,10 @@ struct ChristmasAdditions : sms::Mod {
 			if (hitNow) {
 				const float pl = sqrtf(pushX * pushX + pushZ * pushZ);
 				if (pl > 0.01f) {
-					g.push.x += pushX / pl * 5200.0f * dt, g.push.z += pushZ / pl * 5200.0f * dt;
+					g.push.x += pushX / pl * 6500.0f * dt, g.push.z += pushZ / pl * 6500.0f * dt;
 					const float sp = sqrtf(g.push.x * g.push.x + g.push.z * g.push.z);
-					if (sp > 850.0f)
-						g.push = mul(g.push, 850.0f / sp);
+					if (sp > 1050.0f)
+						g.push = mul(g.push, 1050.0f / sp);
 				}
 			}
 			if (g.push.x * g.push.x + g.push.z * g.push.z > 1.0f) {
