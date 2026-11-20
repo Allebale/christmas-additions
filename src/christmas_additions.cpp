@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <map>
 #include <set>
 #include <vector>
 
@@ -884,6 +885,7 @@ struct ChristmasAdditions : sms::Mod {
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
 	std::set<SmsObject> bare;           // Piantas whose own hat and leaf hair are off under the Santa hat, this stage
+	std::map<SmsObject, bool> wasHead;  // each Stu ball as first seen: the top of its stack (the head) or not, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
 	// ---------------------------------------------------------------- snow
@@ -1493,8 +1495,15 @@ struct ChristmasAdditions : sms::Mod {
 					if (topOther)
 						belowHead = true;
 				}
-				if (!above)
+				// The face and hat stay with the ball that was the head when first seen: knocked off, the balls
+				// left are a headless body (Allebale: each of them had grown a face and hat of its own)
+				std::map<SmsObject, bool>::iterator w = wasHead.find(b.obj);
+				if (w == wasHead.end())
+					w = wasHead.insert(std::make_pair(b.obj, !above)).first;
+				if (w->second)
 					draw(head, b.m);
+				else if (!above)
+					draw(buttons, b.m);
 				else {
 					draw(buttons, b.m);
 					if (belowHead)
@@ -1583,7 +1592,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(); }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasHead.clear(); }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
