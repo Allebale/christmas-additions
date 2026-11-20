@@ -302,49 +302,60 @@ void baublePattern(Mesh& m, int kind, Rgb a, Rgb b)
 // (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
 // thickness. Each piece hangs from its joint: the body and head, two arms (from the shoulder), two legs (hip).
 const Rgb kCookie = {178, 104, 46}, kIcing = {250, 250, 252}, kGumRed = {214, 36, 48}, kGumGreen = {44, 168, 70}, kChoc = {52, 30, 20};
-const float kHipY = 92, kShoulderY = 156, kHipX = 15, kShoulderX = 26;
-void gingerBody(Mesh& m)
+const float kHipY = 86, kShoulderY = 146, kHipX = 19, kShoulderX = 33, kHeadR = 37;
+const Rgb kCheek = {236, 120, 120};
+// a wavy line of icing across a limb's front, round `at`, `w` wide
+static void icingWave(Mesh& m, V at, float w, float frontZ)
 {
-	m.cylinder(v(0, kHipY - 12, 0), v(0, kShoulderY + 6, 0), 27, 25, kCookie, 16);
-	m.sphere(v(0, kHipY - 10, 0), 27, kCookie, 14, 8);
-	m.sphere(v(0, kShoulderY + 4, 0), 25, kCookie, 14, 8);
-	m.sphere(v(0, kShoulderY + 36, 0), 27, kCookie, 16, 10);         // the head
-	for (int s = -1; s <= 1; s += 2) {                                 // chocolate eyes, an icing smile
-		m.sphere(v(9.0f * s, kShoulderY + 42, 25), 4.5f, kChoc, 8, 6);
-	}
-	for (int i = 0; i < 5; i++) {
-		float t = (i - 2) / 2.0f;
-		m.sphere(v(12 * t, kShoulderY + 26 - 4 * (1 - t * t), 25.5f), 2.6f, kIcing, 6, 4);
-	}
-	for (int i = 0; i < 3; i++)                                        // gumdrop buttons
-		m.sphere(v(0, kHipY + 14 + 22.0f * i, 26), 5.5f, i == 1 ? kGumGreen : kGumRed, 10, 6);
-	std::vector<V> c;                                                  // an icing zigzag round the neck
+	std::vector<V> c;
 	std::vector<float> r;
-	for (int i = 0; i <= 16; i++) {
-		float a = kPi * (0.15f + 0.7f * i / 16);
-		c.push_back(v(-26 * cosf(a), kShoulderY + 10 + (i % 2 ? 3.0f : -3.0f), 26 * sinf(a)));
-		r.push_back(1.8f);
+	for (int i = 0; i <= 10; i++) {
+		float t = i / 10.0f;
+		c.push_back(v(at.x - w / 2 + w * t, at.y + 2.5f * sinf(t * kPi * 3), frontZ));
+		r.push_back(1.9f);
 	}
 	m.tube(c, r, kIcing, 6, false);
 }
-// an arm hanging from its shoulder (at the origin), down and a little out: side -1 left, +1 right
+void gingerBody(Mesh& m)
+{
+	const float headY = kShoulderY + kHeadR + 2;
+	m.cylinder(v(0, kHipY - 8, 0), v(0, kShoulderY, 0), 37, 34, kCookie, 18);   // a wide, round body
+	m.sphere(v(0, kHipY - 8, 0), 37, kCookie, 16, 8);
+	m.sphere(v(0, kShoulderY, 0), 34, kCookie, 16, 8);
+	m.sphere(v(0, headY, 0), kHeadR, kCookie, 18, 12);                          // a big round head
+	for (int s = -1; s <= 1; s += 2) {
+		m.sphere(v(12.0f * s, headY + 7, 34), 6.0f, kChoc, 10, 6);              // round chocolate eyes
+		m.sphere(v(12.0f * s + 2, headY + 9.5f, 39), 1.8f, kIcing, 6, 4);        // a glint in each
+		m.sphere(v(21.0f * s, headY - 6, 30), 5.5f, kCheek, 10, 6);             // rosy cheeks
+	}
+	std::vector<V> c;                                                            // a smile: one icing line
+	std::vector<float> r;
+	for (int i = 0; i <= 12; i++) {
+		float t = (i - 6) / 6.0f, x = 13 * t, y = headY - 8 - 6 * (1 - t * t);
+		float z = sqrtf(kHeadR * kHeadR - x * x - (y - headY) * (y - headY)) + 0.5f;
+		c.push_back(v(x, y, z));
+		r.push_back(2.0f);
+	}
+	m.tube(c, r, kIcing, 6, false);
+	for (int i = 0; i < 3; i++)                                                  // gumdrop buttons
+		m.sphere(v(0, kHipY + 8 + 21.0f * i, 36), 7, i == 1 ? kGumGreen : kGumRed, 10, 6);
+}
+// an arm from its shoulder (at the origin), down and out: side -1 left, +1 right
 void gingerArm(Mesh& m, int side)
 {
-	V hand = v(14.0f * side, -66, 0);
-	m.cylinder(v(0, 0, 0), hand, 12, 10, kCookie, 12);
-	m.sphere(v(0, 0, 0), 12, kCookie, 10, 6);
-	m.sphere(hand, 11, kCookie, 10, 6);
-	for (int k = -1; k <= 1; k++)                                      // an icing cuff
-		m.sphere(add(mul(hand, 0.78f), v(4.0f * k, 0, 10)), 2.4f, kIcing, 6, 4);
+	V hand = v(30.0f * side, -46, 0);
+	m.cylinder(v(0, 0, 0), hand, 16, 15, kCookie, 12);
+	m.sphere(v(0, 0, 0), 16, kCookie, 10, 6);
+	m.sphere(hand, 16, kCookie, 12, 8);
+	icingWave(m, add(mul(hand, 0.72f), v(0, 0, 0)), 24, 15.5f);
 }
 // a leg from the hip (at the origin) to a round foot
 void gingerLeg(Mesh& m, int side)
 {
-	V foot = v(5.0f * side, -kHipY + 12, 0);
-	m.cylinder(v(0, 0, 0), foot, 14, 13, kCookie, 12);
-	m.sphere(foot, 14, kCookie, 10, 6);
-	for (int k = -1; k <= 1; k++)
-		m.sphere(add(mul(foot, 0.8f), v(4.5f * k, 0, 12)), 2.6f, kIcing, 6, 4);
+	V foot = v(9.0f * side, -kHipY + 18, 0);
+	m.cylinder(v(0, 0, 0), foot, 18, 17, kCookie, 12);
+	m.sphere(foot, 18, kCookie, 12, 8);
+	icingWave(m, mul(foot, 0.8f), 26, 17.5f);
 }
 
 // Rudolph's antlers, ears and nose. Made in Yoshi's model's own rest pose (yoshi_model.bmd: x his left,
@@ -1002,6 +1013,8 @@ struct ChristmasAdditions : sms::Mod {
 	double gingerClock = -1;
 	SmsMesh gBody = 0, gArm[2] = {}, gLeg[2] = {};
 	std::set<SmsObject> baubled;        // Bob-omb baubles tinted, this stage
+	std::vector<std::pair<SmsObject, int> > baubles; // the level's Bob-omb baubles and their numbers, this stage
+	int baubleLooks = 0;
 	SmsMesh baubleCapMesh = 0, baublePat[5][4] = {};
 	bool baubleLogged = false;
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
@@ -1631,7 +1644,7 @@ struct ChristmasAdditions : sms::Mod {
 	}
 	void drawGinger(const Ginger& g, float speed)
 	{
-		const float s = 1.0f, thin = 0.42f;                 // his size; how thick a cookie is
+		const float s = 1.0f, thin = 0.62f;                 // his size; how thick a cookie is
 		const V right = v(cosf(g.yaw), 0, -sinf(g.yaw)), up = v(0, 1, 0), fwd = v(sinf(g.yaw), 0, cosf(g.yaw));
 		const float swing = speed > 1 ? 0.55f * sinf(g.phase) : 0.0f;
 		const float bob = speed > 1 ? 4.0f * fabsf(sinf(g.phase)) : 0.0f;
@@ -1726,16 +1739,27 @@ struct ChristmasAdditions : sms::Mod {
 		// Bob-omb baubles: each its own colour (the whole Bob-omb tinted, shading kept), a cap and loop on top
 		// and one of five patterns, picked by its number
 		if (setting("baubles", 1)) {
-			int n = api().actor->near(&p.position, 9000.0f, SMS_ACTOR_FLAG_SMALL_ENEMY, found, 160);
-			if (n > 160)
-				n = 160;
+			// found by name once a stage (as the gingerbread men's markers are: near() with the small enemy
+			// flag never listed them)
+			if (baubles.empty() && baubleLooks < 8 && game().find_object) {
+				baubleLooks++;
+				for (int i = 0; i < 64; i++) {
+					char name[24];
+					snprintf(name, sizeof name, "Bauble %d", i);
+					if (SmsObject o = game().find_object(name))
+						baubles.push_back(std::make_pair(o, i));
+				}
+				if (!baubles.empty()) {
+					baubleLooks = 99;
+					info("%d Bob-omb baubles", (int)baubles.size());
+				}
+			}
 			static const SmsColor kBody[8] = {0xC81E28E0u, 0x2F5FD0E0u, 0x23964BE0u, 0xE6B43CE0u, 0x8C3CB4E0u, 0xD2D7E1E0u, 0xE65AA0E0u, 0x2AAAB4E0u};
-			for (int i = 0; i < n; i++) {
-				SmsObject o = found[i];
-				const char* nm = game().object_name ? game().object_name(o) : nullptr;
-				if (!nm || strncmp(nm, "Bauble", 6))
+			for (size_t i = 0; i < baubles.size(); i++) {
+				SmsObject o = baubles[i].first;
+				const int k = baubles[i].second;
+				if (api().actor->flags && (api().actor->flags(o) & (SMS_ACTOR_FLAG_DEAD | SMS_ACTOR_FLAG_HIDDEN)))
 					continue;
-				const int k = atoi(nm + 6);
 				if (!baubled.count(o) && game().object_set_tint) {
 					game().object_set_tint(o, kBody[k % 8]);
 					baubled.insert(o);
@@ -1938,7 +1962,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), gingers.clear(), gingerLooks = 0; }); // the tints (and what was hidden) went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), baubled.clear(), baubles.clear(), baubleLooks = 0, gingers.clear(), gingerLooks = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
