@@ -883,6 +883,7 @@ struct ChristmasAdditions : sms::Mod {
 	bool santaOn = false, fluddOn = false; // tints put on
 	bool rudolphOn = false; // Yoshi's colour set
 	std::set<SmsObject> dressed, snowy; // Piantas' clothes and snowmen tinted, this stage
+	std::set<SmsObject> bare;           // Piantas whose own hat and leaf hair are off under the Santa hat, this stage
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
 
 	// ---------------------------------------------------------------- snow
@@ -1160,6 +1161,25 @@ struct ChristmasAdditions : sms::Mod {
 
 	bool partsHave(size_t end) { return parts && parts->size >= end; }
 
+	// A Pianta's own hat (a straw hat, a woman's flowered one: worn models "hat..." and "hw...") left off
+	// and its palm-leaf hair hidden, so the Santa hat sits alone; or both back
+	static bool ownHat(const char* name) { return name && (!strncmp(name, "hat", 3) || !strncmp(name, "hw", 2)); }
+	void bareHead(SmsObject o, int off)
+	{
+		static const char* const kHair[] = {"yashi_jnt", "leafL_jnt", "leafR_jnt"};
+		for (int k = 0; k < 3; k++)
+			parts->hide_joint(o, kHair[k], off);
+		for (int i = 0; i < 12; i++)
+			if (ownHat(parts->worn_name(o, i)))
+				parts->hide_worn(o, i, off);
+	}
+	void unbare()
+	{
+		for (std::set<SmsObject>::iterator i = bare.begin(); i != bare.end(); ++i)
+			bareHead(*i, 0); // Piantas stay all stage long
+		bare.clear();
+	}
+
 	// Yoshi as Rudolph: reindeer brown whatever fruit he ate, antlers, and a glowing red nose
 	void rudolph(const SmsCamera* cam)
 	{
@@ -1393,6 +1413,9 @@ struct ChristmasAdditions : sms::Mod {
 		const bool snowmen = config().get_int(handle(), "snowmen", 1) != 0;
 		if (!clothes && !dressed.empty())
 			untint(dressed, true); // switched off
+		const bool canBare = partsHave(offsetof(SmsPartsApi, hide_worn) + sizeof(void*));
+		if (!hats && !bare.empty() && canBare)
+			unbare();
 		if (!snowmen && !snowy.empty())
 			untint(snowy, false);
 		SmsPlayer p;
@@ -1411,8 +1434,13 @@ struct ChristmasAdditions : sms::Mod {
 				float m[3][4];
 				if (!named(o, kMonte) || !parts->joint(o, "kubi", m))
 					continue;
-				if (hats)
+				if (hats) {
+					if (canBare && !bare.count(o)) {
+						bareHead(o, 1);
+						bare.insert(o);
+					}
 					draw(hat, m);
+				}
 				if (clothes && !dressed.count(o)) {
 					unsigned pick = (unsigned)(m[0][3] * 0.37f + m[2][3] * 0.61f);
 					parts->tint(o, "fuku", kWinter[pick % (sizeof kWinter / sizeof kWinter[0])]);
@@ -1544,7 +1572,7 @@ struct ChristmasAdditions : sms::Mod {
 		buttons = make(snowmanButtons);
 		arms    = make(snowmanArms);
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(); }); // the tints went with the old stage
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(); }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });

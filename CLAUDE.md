@@ -29,3 +29,7 @@ Next, in order:
 - **FLUDD throws snowballs** (1.5.0, first try, option Off): SMS_EV_WATER_EMIT of the spray nozzle cancelled, a
   drop of the mod's own (water->emit, tag "SN", unseen) every 0.16 s, 1.9 times as fast, bigger, drawn as a
   snowball mesh; SMS_EV_WATER_LAND bursts it into snow puffs. Hits as water does, uses the tank (6 drops).
+- **Piantas under the Santa hat** (1.7.0): their own hat (worn models "hat..." and "hw...") left off with
+  api->parts' hide_worn, and the palm-leaf hair hidden with hide_joint ("yashi_jnt", "leafL_jnt",
+  "leafR_jnt"; game 3818444, SDK 80f47b0). Allebale sent bianco0.szs: montemc/momc_model.bmd and
+  montew/mow_model.bmd (materials _eye_mat, _fuku_mat (men), _hand_mat, _leafback_mat).
