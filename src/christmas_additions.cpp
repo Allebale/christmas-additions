@@ -1007,6 +1007,8 @@ struct ChristmasAdditions : sms::Mod {
 		V home, at, target;
 		float yaw = 0, phase = 0, wait = 0, wave = 0, speed = 0;
 		float cool = 0, swing = 0, gone = 0; // till he can swing again; his swing; crumbled, back in so long
+		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (3 melts him); trembling; his end so far
+		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
 		bool chasing = false;
 		unsigned seed = 1;
 	};
@@ -1629,18 +1631,56 @@ struct ChristmasAdditions : sms::Mod {
 			if (g.gone > 0) { // crumbled: back home after a while
 				g.gone -= dt;
 				if (g.gone <= 0)
-					g.at = g.target = g.home, g.chasing = false, g.wait = 1;
+					g.at = g.target = g.home, g.chasing = false, g.wait = 1, g.wet = 0;
 				continue;
 			}
+			if (g.dying > 0) { // his end: drawn as it goes, then gone
+				g.dying += dt;
+				if (g.dying >= 1.2f)
+					g.dying = 0, g.gone = 30;
+				else
+					drawGinger(g, 0);
+				continue;
+			}
+			// FLUDD's water on him: the game's flying drops passing through him (each used up on him)
+			bool hitNow = false;
+			const SmsWaterApi* wa = SMS_API_HAS(&api(), water) ? api().water : nullptr;
+			if (wa && wa->count && wa->get) {
+				const int nd = wa->count();
+				for (int k = 0; k < nd; k++) {
+					SmsWaterDrop wd;
+					memset(&wd, 0, sizeof wd);
+					wd.size = sizeof wd;
+					if (!wa->get(k, &wd) || wd.landed || wd.tag != 0)
+						continue;
+					const float ddx = wd.position.x - g.at.x, ddz = wd.position.z - g.at.z, ddy = wd.position.y - g.at.y;
+					if (ddx * ddx + ddz * ddz < 55.0f * 55.0f && ddy > -10 && ddy < 230) {
+						hitNow = true;
+						wd.alive = 0;
+						if (wa->set)
+							wa->set(k, &wd);
+					}
+				}
+			}
+			if (hitNow) {
+				g.wet += dt * 2.0f; // (the stream reaches him a tick in two)
+				g.hurt = 0.25f;
+				g.chasing = true;   // and he is cross
+				if (g.wet >= 3.0f) {
+					g.dying = 0.001f, g.dieKind = 1;
+					info("a gingerbread man melted");
+					continue;
+				}
+			}
+			g.hurt -= dt;
 			g.cool -= dt, g.swing -= dt;
 			const float mdx = p.position.x - g.at.x, mdz = p.position.z - g.at.z, mdy = p.position.y - g.at.y;
 			const float d2 = mdx * mdx + mdz * mdz;
 			const float hx = g.at.x - g.home.x, hz = g.at.z - g.home.z;
 			// jumped on: Mario coming down onto his head
-			if (fierce && d2 < 70.0f * 70.0f && mdy > 120 && mdy < 260 && p.velocity.y < 0) {
-				g.gone = 30;
-				addPuff(add(g.at, v(0, 120, 0)), 60);
-				addPuff(add(g.at, v(0, 60, 0)), 50);
+			if (fierce && d2 < 75.0f * 75.0f && mdy > 110 && mdy < 270 && p.velocity.y < 0) {
+				g.dying = 0.001f, g.dieKind = 0;
+				addPuff(add(g.at, v(0, 90, 0)), 50);
 				SmsVec3 up = p.velocity;
 				up.y = 28;
 				player().set_velocity(&up);
@@ -1655,7 +1695,9 @@ struct ChristmasAdditions : sms::Mod {
 			}
 			g.speed = 0;
 			if (g.chasing) {
-				if (d2 > 75.0f * 75.0f)
+				if (g.hurt > 0)
+					gingerStep(g, p.position.x, p.position.z, 0.0f, 3.0f, dt); // held back by the water
+				else if (d2 > 75.0f * 75.0f)
 					gingerStep(g, p.position.x, p.position.z, 330.0f, 6.0f, dt);
 				else
 					gingerStep(g, p.position.x, p.position.z, 0.0f, 8.0f, dt);
@@ -1664,9 +1706,17 @@ struct ChristmasAdditions : sms::Mod {
 					g.cool  = 1.6f;
 					g.swing = 0.35f;
 					if (canHurt && !p.invincible) {
+						// a point of health, then knocked back off his feet, away from him (the game's own
+						// knocked-back fall, as a wall hit too hard gives), facing him
 						player().hurt(1);
-						const float d = sqrtf(d2) > 1 ? sqrtf(d2) : 1;
-						SmsVec3 kb = {mdx / d * 22.0f, 20.0f, mdz / d * 22.0f};
+						if (player().set_status && player().set_yaw)
+							player().set_yaw(atan2f(-mdx, -mdz) * 57.29578f);
+						if (player().set_status)
+							player().set_status(0x208B3, 0);
+						if (player().set_forward_speed)
+							player().set_forward_speed(-24.0f);
+						SmsVec3 kb = p.velocity;
+						kb.y = 32.0f;
 						player().set_velocity(&kb);
 					}
 				}
@@ -1687,9 +1737,25 @@ struct ChristmasAdditions : sms::Mod {
 			drawGinger(g, g.speed);
 		}
 	}
+	// one gingerbread man drawn: walking (his limbs swinging), hit by water (trembling, melting lower and wider
+	// as he soaks), jumped on (squashed, then his pieces flying apart and falling) or melted away
 	void drawGinger(const Ginger& g, float speed)
 	{
-		const float s = 1.0f, thin = 0.62f;                 // his size; how thick a cookie is
+		float sy = 1.0f, sw = 1.0f;                         // his height and width, times his own
+		const float thin = 0.62f;                           // how thick a cookie is
+		const float soak = g.wet / 3.0f;                    // 0 dry, 1 melted
+		sy -= 0.25f * soak, sw += 0.12f * soak;
+		float shake = g.hurt > 0 ? 4.0f * sinf(g.hurt * 70.0f) : 0.0f;
+		float burst = -1;                                   // jumped on: 0..1 through his falling apart
+		if (g.dying > 0 && g.dieKind == 1) {                // melted: down into a puddle of dough
+			const float k = g.dying / 1.2f;
+			sy *= 1.0f - 0.92f * k, sw *= 1.0f + 0.9f * k, shake = 0;
+		} else if (g.dying > 0) {
+			if (g.dying < 0.15f)
+				sy *= 1.0f - 2.8f * g.dying, sw *= 1.0f + 2.0f * g.dying; // squashed flat first
+			else
+				burst = (g.dying - 0.15f) / 1.05f, sy *= 0.58f, sw *= 1.3f;
+		}
 		const V right = v(cosf(g.yaw), 0, -sinf(g.yaw)), up = v(0, 1, 0), fwd = v(sinf(g.yaw), 0, cosf(g.yaw));
 		const float swing = speed > 1 ? 0.55f * sinf(g.phase) : 0.0f;
 		const float bob = speed > 1 ? 4.0f * fabsf(sinf(g.phase)) : 0.0f;
@@ -1699,25 +1765,42 @@ struct ChristmasAdditions : sms::Mod {
 			V ax = add(mul(right, cz), mul(up, sz));
 			V ay = add(mul(up, cz * cx), add(mul(right, -sz * cx), mul(fwd, sx)));
 			V az = sub(mul(fwd, cx), mul(add(mul(up, cz), mul(right, -sz)), sx));
-			ax = mul(ax, s), ay = mul(ay, s), az = mul(az, s * thin);
+			ax = mul(ax, sw), ay = mul(ay, sy), az = mul(az, sw * thin);
 			m[0][0] = ax.x, m[0][1] = ay.x, m[0][2] = az.x, m[0][3] = at.x;
 			m[1][0] = ax.y, m[1][1] = ay.y, m[1][2] = az.y, m[1][3] = at.y;
 			m[2][0] = ax.z, m[2][1] = ay.z, m[2][2] = az.z, m[2][3] = at.z;
 		};
+		// flying apart: a piece pushed out its way and up, falling, tumbling
+		auto fly = [&](V at, V way, float spin, float& swingX, float& outZ) -> V {
+			if (burst < 0)
+				return at;
+			const float t = burst * 1.05f;
+			V o = add(mul(way, 260.0f * t), v(0, 330.0f * t - 900.0f * t * t, 0));
+			if (o.y < -at.y + g.at.y + 5)
+				o.y = -at.y + g.at.y + 5; // not through the ground
+			swingX += spin * t * 9, outZ += spin * t * 5;
+			return add(at, o);
+		};
 		float m[3][4];
-		const V base = add(g.at, v(0, bob, 0));
-		frame(m, base, 0, 0);
+		const V base = add(add(g.at, v(0, bob, 0)), mul(right, shake));
+		float bx = 0, bz = 0;
+		frame(m, fly(base, v(0, 0.3f, 0), 0.4f, bx, bz), bx, bz);
 		draw(gBody, m);
 		for (int side = 0; side < 2; side++) {
 			const float sgn = side ? 1.0f : -1.0f;
-			V hip = add(base, add(mul(right, kHipX * sgn * s), mul(up, kHipY * s)));
-			frame(m, hip, swing * (side ? 1 : -1), 0);
+			V hip = add(base, add(mul(right, kHipX * sgn * sw), mul(up, kHipY * sy)));
+			float lx = swing * (side ? 1 : -1), lz = 0;
+			V hipAt = fly(hip, add(mul(right, sgn * 0.8f), mul(fwd, 0.3f)), sgn, lx, lz);
+			frame(m, hipAt, lx, lz);
 			draw(gLeg[side], m);
-			V shoulder = add(base, add(mul(right, kShoulderX * sgn * s), mul(up, kShoulderY * s)));
+			V shoulder = add(base, add(mul(right, kShoulderX * sgn * sw), mul(up, kShoulderY * sy)));
 			float armSwing = -swing * 0.8f * (side ? 1 : -1), armOut = 0;
 			if (g.swing > 0 && side == 1) // his right arm swung at Mario: up and forward, then down
 				armSwing = -2.4f * (g.swing / 0.35f), armOut = 0.3f;
-			frame(m, shoulder, armSwing, armOut);
+			if (g.hurt > 0) // flinching from the water: arms up over him
+				armSwing = -2.0f, armOut = 0.4f * sgn;
+			V shAt = fly(shoulder, add(mul(right, sgn * 1.0f), mul(fwd, -0.4f)), -sgn, armSwing, armOut);
+			frame(m, shAt, armSwing, armOut);
 			draw(gArm[side], m);
 		}
 	}
