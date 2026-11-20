@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <vector>
@@ -1106,8 +1107,7 @@ struct ChristmasAdditions : sms::Mod {
 	std::vector<Bomb> bombs;              // the level's bauble Bob-ombs, this stage
 	double bombClock = -1;
 	int baubleLooks = 0;
-	SmsMesh baubleCapMesh = 0, baublePat[5][4] = {};
-	SmsMesh bombBody[9] = {}, bombShards[9] = {}, bombFaceMesh = 0, bombFootMesh = 0, bombKeyMesh = 0;
+	SmsMesh bombLook[8] = {}, bombFlash = 0, bombShardMesh = 0, bombFootMesh = 0, bombKeyMesh = 0;
 
 	std::set<SmsObject> wasUnder;       // Stu balls that have had another on top of them, this stage: never a head
 	int leftArea = -1, leftEpisode = -1; // the stage Mario left by its way out, till he starts in the next
@@ -1727,6 +1727,31 @@ struct ChristmasAdditions : sms::Mod {
 		SmsVec3 p = {at.x, at.y + 60, at.z};
 		game().object_set_position(gingerCoins[nextCoin++], &p);
 	}
+	// Which of these to draw: the `most` nearest `from` within `within`. The game draws at most 96 of the mods'
+	// models a moment (all mods together), so the far ones are left out, and the snowmen keep theirs.
+	static std::vector<char> nearest(const std::vector<V>& at, V from, int most, float within)
+	{
+		std::vector<std::pair<float, size_t> > d;
+		for (size_t i = 0; i < at.size(); i++) {
+			const float dx = at[i].x - from.x, dy = at[i].y - from.y, dz = at[i].z - from.z, d2 = dx * dx + dy * dy + dz * dz;
+			if (d2 < within * within)
+				d.push_back(std::make_pair(d2, i));
+		}
+		std::sort(d.begin(), d.end());
+		std::vector<char> show(at.size(), 0);
+		for (size_t k = 0; k < d.size() && (int)k < most; k++)
+			show[d[k].second] = 1;
+		return show;
+	}
+	V viewPoint(const SmsPlayer& p)
+	{
+		SmsCamera cam;
+		memset(&cam, 0, sizeof cam);
+		cam.size = sizeof cam;
+		if (SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid)
+			return v(cam.position.x, cam.position.y, cam.position.z);
+		return v(p.position.x, p.position.y, p.position.z);
+	}
 	// FLUDD's flying water passing through a round space at `at` (its drops used up on it): any this tick
 	bool sprayHit(V at, float rad, float lo, float hi)
 	{
@@ -1824,6 +1849,10 @@ struct ChristmasAdditions : sms::Mod {
 		cam.size = sizeof cam;
 		const bool haveCam = SMS_API_HAS(&api(), camera) && api().camera->get(&cam) && cam.valid;
 		std::vector<SmsTexCorner> glow; // fire and sparks, added on top
+		std::vector<V> where;
+		for (size_t i = 0; i < bombs.size(); i++)
+			where.push_back(bombs[i].gone > 0 ? v(1e9f, 1e9f, 1e9f) : bombs[i].at);
+		const std::vector<char> show = nearest(where, viewPoint(p), 5, 3500); // (4 models each)
 		for (size_t i = 0; i < bombs.size(); i++) {
 			Bomb& b = bombs[i];
 			const V mid = add(b.at, v(0, kBombFootY + kBombR, 0));
@@ -1848,7 +1877,8 @@ struct ChristmasAdditions : sms::Mod {
 			}
 			if (b.shatter > 0) { // its glass flying apart and falling
 				b.shatter += dt;
-				drawShatter(b);
+				if (show[i])
+					drawShatter(b);
 				if (b.shatter > 1.0f)
 					b.shatter = 0, b.gone = 25, dropCoin(b.at);
 				continue;
@@ -1917,7 +1947,8 @@ struct ChristmasAdditions : sms::Mod {
 				sound(0x2068, mid); // MSD_SE_EN_BOMBHEI_ZENMAI: its key whirring as it walks (held while asked)
 			b.phase += dt * b.speed * 0.06f;
 			b.turn += dt * (b.speed > 1 ? 7.0f : 1.5f);
-			drawBomb(b, t);
+			if (show[i])
+				drawBomb(b, t);
 		}
 
 		if (!glow.empty() && puffTex && api().models->draw_textured)
@@ -1935,16 +1966,12 @@ struct ChristmasAdditions : sms::Mod {
 		// the body leaning side to side as it waddles (turned about forward)
 		const V u2 = add(mul(up, cosf(rock)), mul(right, sinf(rock))), r2 = sub(mul(right, cosf(rock)), mul(up, sinf(rock)));
 		const float m[3][4] = {{u2.x * R, fwd.x * R, r2.x * R, mid.x}, {u2.y * R, fwd.y * R, r2.y * R, mid.y}, {u2.z * R, fwd.z * R, r2.z * R, mid.z}};
-		int body = b.look % 8;
-		if (b.fuse > 0) { // flashing: slow at first, quick as it burns down
+		bool flash = false;
+		if (b.fuse > 0) { // flashing white: slow at first, quick as it burns down
 			const float rate = 3.0f + (4.5f - b.fuse) * 3.0f;
-			if (fmodf((float)t * rate, 1.0f) < 0.4f)
-				body = 8;
+			flash = fmodf((float)t * rate, 1.0f) < 0.4f;
 		}
-		draw(bombBody[body], m);
-		draw(baublePat[(b.look / 8 + b.look) % 5][(b.look * 3) % 4], m);
-		draw(baubleCapMesh, m);
-		draw(bombFaceMesh, m);
+		draw(flash ? bombFlash : bombLook[b.look % 8], m);
 		// the key, turning about its own forward-back axis
 		const float c = cosf(b.turn), sn = sinf(b.turn);
 		const V ku = add(mul(u2, c), mul(r2, sn)), kr = sub(mul(r2, c), mul(u2, sn));
@@ -1965,7 +1992,7 @@ struct ChristmasAdditions : sms::Mod {
 		const float k = b.shatter, R = kBombR;
 		const V mid = add(b.at, v(0, kBombFootY + R, 0));
 		unsigned h = 31u * (unsigned)(b.look + 1);
-		for (int i = 0; i < 14; i++) {
+		for (int i = 0; i < 7; i++) {
 			const float a = frand(h) * 2 * kPi, e = 0.2f + frand(h) * 1.0f, sp = 180 + frand(h) * 220, spin = 4 + frand(h) * 10;
 			const V dir = v(cosf(a) * cosf(e), sinf(e), sinf(a) * cosf(e));
 			V at = add(mid, mul(dir, R * 0.7f + sp * k));
@@ -1976,7 +2003,7 @@ struct ChristmasAdditions : sms::Mod {
 			const float c = cosf(spin * k + a), sn = sinf(spin * k + a);
 			const V x = v(c, sn * 0.6f, -sn), y = norm(cross(v(0.3f, 1, 0.2f), x)), z = cross(x, y);
 			const float m[3][4] = {{x.x * sc, y.x * sc, z.x * sc, at.x}, {x.y * sc, y.y * sc, z.y * sc, at.y}, {x.z * sc, y.z * sc, z.z * sc, at.z}};
-			draw(bombShards[i % 3 == 0 ? 8 : b.look % 8], m);
+			draw(bombShardMesh, m);
 		}
 	}
 	// a ball of fire (camera-facing soft dots, yellow at its heart, orange to red outside), 0.7 s long
@@ -2050,6 +2077,10 @@ struct ChristmasAdditions : sms::Mod {
 			}
 		}
 		const bool fierce  = setting("gingerbread_chase", 1) != 0;
+		std::vector<V> where;
+		for (size_t i = 0; i < gingers.size(); i++)
+			where.push_back(gingers[i].gone > 0 ? v(1e9f, 1e9f, 1e9f) : gingers[i].at);
+		const std::vector<char> show = nearest(where, viewPoint(p), 4, 4000); // (5 models each)
 		gingerRest -= dt;
 		const bool canHurt = SMS_API_HAS(&api(), player) && player().size >= offsetof(SmsPlayerApi, hurt) + sizeof(void*) && player().hurt;
 		for (size_t i = 0; i < gingers.size(); i++) {
@@ -2064,7 +2095,7 @@ struct ChristmasAdditions : sms::Mod {
 				g.dying += dt;
 				if (g.dying >= 1.2f)
 					g.dying = 0, g.gone = 30, dropCoin(g.at); // however he went, a coin where he was
-				else
+				else if (show[i])
 					drawGinger(g, 0);
 				continue;
 			}
@@ -2185,7 +2216,8 @@ struct ChristmasAdditions : sms::Mod {
 				g.phase += dt * g.speed * 0.045f;
 				if (g.speed > 1 && floorf(g.phase / kPi) != floorf(before / kPi)) // a foot down
 					sound(0x2839, g.at); // MSD_SE_EN_HMKRI_WALK
-				drawGinger(g, g.speed);
+				if (show[i])
+					drawGinger(g, g.speed);
 			}
 			drawPuddles();
 	}
@@ -2313,12 +2345,7 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
-		if (setting("gingerbread", 1))
-			gingerbread(p);
 
-		// bauble Bob-ombs: the mod's own, where a level puts invisible coins named "Bauble N"
-		if (setting("baubles", 1))
-			bombsTick(p);
 
 		// snowmen
 		if (snowmen) {
@@ -2382,6 +2409,13 @@ struct ChristmasAdditions : sms::Mod {
 				}
 			}
 		}
+
+		// the mod's own enemies after the snowmen (the game draws only so many of the mods' models a moment)
+		if (setting("gingerbread", 1))
+			gingerbread(p);
+		// bauble Bob-ombs: where a level puts invisible coins named "Bauble N"
+		if (setting("baubles", 1))
+			bombsTick(p);
 	}
 
 	int load() override
@@ -2479,33 +2513,33 @@ struct ChristmasAdditions : sms::Mod {
 			gLeg[0] = api().models->create(handle(), &l0.corners[0], (int)l0.corners.size());
 			gLeg[1] = api().models->create(handle(), &l1.corners[0], (int)l1.corners.size());
 		}
-		{
-			Mesh cap;
-			baubleCap(cap);
-			baubleCapMesh = api().models->create(handle(), &cap.corners[0], (int)cap.corners.size());
-			for (int k = 0; k < 5; k++)
-				for (int c = 0; c < 4; c++) {
-					static const Rgb kA[4] = {kBaubleGold, kSilver, {255, 255, 255}, {200, 30, 40}};
-					static const Rgb kB[4] = {{255, 255, 255}, kBaubleGold, kSilver, kBaubleGold};
-					Mesh pm;
-					baublePattern(pm, k, kA[c], kB[c]);
-							baublePat[k][c] = api().models->create(handle(), &pm.corners[0], (int)pm.corners.size());
-						}
-					for (int c = 0; c < 9; c++) {
-						Mesh bm, sm;
-						bm.sphere(v(0, 0, 0), 1.0f, kBaubleBody[c], 22, 16);
-						bombBody[c] = api().models->create(handle(), &bm.corners[0], (int)bm.corners.size());
-						bombShard(sm, kBaubleBody[c]);
-						bombShards[c] = api().models->create(handle(), &sm.corners[0], (int)sm.corners.size());
-					}
-					Mesh fm, ft, ky;
-					bombFace(fm), bombFoot(ft), bombKey(ky);
-					bombFaceMesh = api().models->create(handle(), &fm.corners[0], (int)fm.corners.size());
-					bombFootMesh = api().models->create(handle(), &ft.corners[0], (int)ft.corners.size());
-					bombKeyMesh  = api().models->create(handle(), &ky.corners[0], (int)ky.corners.size());
-		}
-		buttons = make(snowmanButtons);
+		buttons = make(snowmanButtons); // (the snowmen's first: the game keeps 64 models for all mods together)
 		arms    = make(snowmanArms);
+		{
+			// bauble Bob-ombs: one model a look (body, pattern, cap and loop, eyes together, so one drawing each),
+			// a white one for its flash, its foot, key and a bit of glass
+			static const Rgb kA[4] = {kBaubleGold, kSilver, {255, 255, 255}, {200, 30, 40}};
+			static const Rgb kB[4] = {{255, 255, 255}, kBaubleGold, kSilver, kBaubleGold};
+			for (int k = 0; k < 8; k++) {
+				Mesh lm;
+				lm.sphere(v(0, 0, 0), 1.0f, kBaubleBody[k], 16, 12);
+				baublePattern(lm, k % 5, kA[(k * 3) % 4], kB[(k * 3) % 4]);
+				baubleCap(lm);
+				bombFace(lm);
+				bombLook[k] = api().models->create(handle(), &lm.corners[0], (int)lm.corners.size());
+			}
+			Mesh wm, sm, ft, ky;
+			wm.sphere(v(0, 0, 0), 1.02f, kBaubleBody[8], 16, 12);
+			baubleCap(wm);
+			bombShard(sm, {228, 236, 246});
+			bombFoot(ft), bombKey(ky);
+			bombFlash     = api().models->create(handle(), &wm.corners[0], (int)wm.corners.size());
+			bombShardMesh = api().models->create(handle(), &sm.corners[0], (int)sm.corners.size());
+			bombFootMesh  = api().models->create(handle(), &ft.corners[0], (int)ft.corners.size());
+			bombKeyMesh   = api().models->create(handle(), &ky.corners[0], (int)ky.corners.size());
+			if (!bombLook[7] || !bombKeyMesh)
+				warn("too few models left for the bauble Bob-ombs (the game keeps 64 for all mods)");
+		}
 
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), bombs.clear(), baubleLooks = 0, bombClock = -1, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
