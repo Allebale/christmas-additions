@@ -3,8 +3,8 @@
 - Allebale's mod (house rules: see the fork's CLAUDE.md in Allebale/sms-pc-port-remastered: commit author,
   settings text, no variables named far or near, ask before releases).
 - Needs api->parts: the game's `snowman-enemy` branch (Chase's port plus only api->parts, SDK fork branch
-  `snowman-enemy`; the old Remastered-based one is `snowman-enemy-fallback`), or Remastered with the SDK `parts` branch. The mod finds the table by its magic either way. Was: the game's
-  `snowman-enemy` branch). Everything Christmas lives here, never in the game (Chase's rule).
+  `snowman-enemy`; the old Remastered-based one is `snowman-enemy-fallback`), or Remastered with the SDK `parts` branch.
+  The mod finds the table by its magic either way. Everything Christmas lives here, never in the game (Chase's rule).
 
 ## Being made, one at a time (Allebale, Nov 19: "start now, one at a time")
 
