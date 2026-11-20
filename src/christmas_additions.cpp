@@ -1049,6 +1049,7 @@ struct Puddle { // left by a gingerbread man: spreading out, staying a while, th
 	V p;
 	float born, size, life, yaw, grow;
 	uint8_t r, g, b, a;
+	V n; // which way it faces: up on the ground, out of a wall he was splatted on
 };
 struct Flake {
 	V at; // where it starts in the box round the camera
@@ -1094,6 +1095,7 @@ struct ChristmasAdditions : sms::Mod {
 		float wet = 0, hurt = 0, dying = 0;  // seconds of water on him (2 melt him); trembling; his end so far
 		float hiss = 0, dry = 0, drip = 0;   // till the next splash sound; till he starts drying off; next drip
 		V push = {0, 0, 0};                  // pushed by the water: how fast, which way (units a second)
+		V wallN = {0, 0, 1};                 // splatted on a wall: the way out of it
 		int dieKind = 0;                     // 0 jumped on (falls apart), 1 melted
 		bool chasing = false;
 		unsigned seed = 1;
@@ -1686,11 +1688,11 @@ struct ChristmasAdditions : sms::Mod {
 			g.at.y = gr.floor;
 		return moved >= (speed * dt * 0.3f) * (speed * dt * 0.3f);
 	}
-	void addPuddle(V at, float size, float life, float grow, Rgb col, uint8_t a, unsigned& seed)
+	void addPuddle(V at, float size, float life, float grow, Rgb col, uint8_t a, unsigned& seed, V n = v(0, 1, 0))
 	{
 		if (puddles.size() >= 64)
 			puddles.erase(puddles.begin());
-		Puddle pd = {at, now, size, life, frand(seed) * 2 * kPi, grow, col.r, col.g, col.b, a};
+		Puddle pd = {at, now, size, life, frand(seed) * 2 * kPi, grow, col.r, col.g, col.b, a, n};
 		puddles.push_back(pd);
 	}
 	// the puddles, lying flat on the ground where they were left
@@ -1715,6 +1717,12 @@ struct ChristmasAdditions : sms::Mod {
 			s *= 0.85f + 0.15f * fade;
 			V f = mul(v(sinf(pd.yaw), 0, cosf(pd.yaw)), s), r = mul(v(cosf(pd.yaw), 0, -sinf(pd.yaw)), s);
 			V p = add(pd.p, v(0, 1.5f + 0.01f * (float)i, 0));
+			if (pd.n.y < 0.5f) { // on a wall: flat against it, a little taller than wide (running down it)
+				const V across = norm(cross(v(0, 1, 0), pd.n)), tilt = v(0, 1, 0);
+				const float c = cosf(pd.yaw * 0.15f), sn = sinf(pd.yaw * 0.15f); // turned only a little
+				r = mul(add(mul(across, c), mul(tilt, sn)), s), f = mul(sub(mul(tilt, c), mul(across, sn)), s * 1.25f);
+				p = add(pd.p, mul(pd.n, 1.5f + 0.01f * (float)i));
+			}
 			quad(c, add(sub(p, r), f), add(add(p, r), f), sub(add(p, r), f), sub(sub(p, r), f), pd.r, pd.g, pd.b,
 			     (uint8_t)(pd.a * fade));
 		}
@@ -2164,6 +2172,21 @@ struct ChristmasAdditions : sms::Mod {
 				SmsVec3 want3 = {g.at.x + g.push.x * dt, g.at.y + 60, g.at.z + g.push.z * dt}, out = want3;
 				if (game().out_of_walls)
 					game().out_of_walls(&want3, 40.0f, &out, nullptr);
+				// pushed into a wall fast enough: splat, flat against it, a puddle of him on it (Allebale)
+				const float sp = sqrtf(g.push.x * g.push.x + g.push.z * g.push.z);
+				const float wx = out.x - want3.x, wz = out.z - want3.z, wl = sqrtf(wx * wx + wz * wz);
+				if (sp > 180.0f && wl > sp * dt * 0.5f) {
+					g.wallN = v(wx / wl, 0, wz / wl);
+					g.at.x = out.x - g.wallN.x * 30.0f, g.at.z = out.z - g.wallN.z * 30.0f; // pressed up to it
+					g.yaw = atan2f(-g.wallN.x, -g.wallN.z);                                 // facing it
+					g.dying = 0.001f, g.dieKind = 2, g.push = v(0, 0, 0);
+					const V onWall = v(out.x - g.wallN.x * 39.0f, g.at.y + 95.0f, out.z - g.wallN.z * 39.0f);
+					addPuddle(onWall, 70, 20, 0.25f, kDough, 230, g.seed, g.wallN);
+					sound(0x2802, g.at); // MSD_SE_EN_NAMEKURI_DOWN_WT: a wet splat
+					sound(0x2838, g.at); // MSD_SE_EN_HMKRI_VO_DOWN
+					info("a gingerbread man hit a wall");
+					continue;
+				}
 				g.at.x = out.x, g.at.z = out.z;
 				SmsGround gr;
 				memset(&gr, 0, sizeof gr);
@@ -2261,9 +2284,13 @@ struct ChristmasAdditions : sms::Mod {
 		sy -= 0.25f * soak, sw += 0.12f * soak;
 		float shake = g.hurt > 0 ? 4.0f * sinf(g.hurt * 70.0f) : 0.0f;
 		float burst = -1;                                   // jumped on: 0..1 through his falling apart
+		float flat = 1.0f, spread = 0.0f;                   // splatted on a wall: how thick still; arms and legs out
 		if (g.dying > 0 && g.dieKind == 1) {                // melted: down into a puddle of dough
 			const float k = g.dying / 1.2f;
 			sy *= 1.0f - 0.92f * k, sw *= 1.0f + 0.9f * k, shake = 0;
+		} else if (g.dying > 0 && g.dieKind == 2) {         // splatted: flat against the wall, then sliding down it
+			const float k = g.dying < 0.12f ? g.dying / 0.12f : 1.0f;
+			flat = 1.0f - 0.85f * k, spread = k, sw *= 1.0f + 0.3f * k, shake = 0;
 		} else if (g.dying > 0) {
 			if (g.dying < 0.15f)
 				sy *= 1.0f - 2.8f * g.dying, sw *= 1.0f + 2.0f * g.dying; // squashed flat first
@@ -2279,7 +2306,7 @@ struct ChristmasAdditions : sms::Mod {
 			V ax = add(mul(right, cz), mul(up, sz));
 			V ay = add(mul(up, cz * cx), add(mul(right, -sz * cx), mul(fwd, sx)));
 			V az = sub(mul(fwd, cx), mul(add(mul(up, cz), mul(right, -sz)), sx));
-			ax = mul(ax, sw), ay = mul(ay, sy), az = mul(az, sw * thin);
+			ax = mul(ax, sw), ay = mul(ay, sy), az = mul(az, sw * thin * flat);
 			m[0][0] = ax.x, m[0][1] = ay.x, m[0][2] = az.x, m[0][3] = at.x;
 			m[1][0] = ax.y, m[1][1] = ay.y, m[1][2] = az.y, m[1][3] = at.y;
 			m[2][0] = ax.z, m[2][1] = ay.z, m[2][2] = az.z, m[2][3] = at.z;
@@ -2296,14 +2323,16 @@ struct ChristmasAdditions : sms::Mod {
 			return add(at, o);
 		};
 		float m[3][4];
-		const V base = add(add(g.at, v(0, bob, 0)), mul(right, shake));
+		V base = add(add(g.at, v(0, bob, 0)), mul(right, shake));
+		if (g.dieKind == 2 && g.dying > 0.4f) // sliding down the wall
+			base.y -= 60.0f * (g.dying - 0.4f) * (g.dying - 0.4f) * 3.0f;
 		float bx = 0, bz = 0;
 		frame(m, fly(base, v(0, 0.3f, 0), 0.4f, bx, bz), bx, bz);
 		draw(gBody, m);
 		for (int side = 0; side < 2; side++) {
 			const float sgn = side ? 1.0f : -1.0f;
 			V hip = add(base, add(mul(right, kHipX * sgn * sw), mul(up, kHipY * sy)));
-			float lx = swing * (side ? 1 : -1), lz = 0;
+			float lx = swing * (side ? 1 : -1), lz = 0.6f * spread * sgn;
 			V hipAt = fly(hip, add(mul(right, sgn * 0.8f), mul(fwd, 0.3f)), sgn, lx, lz);
 			frame(m, hipAt, lx, lz);
 			draw(gLeg[side], m);
@@ -2313,6 +2342,8 @@ struct ChristmasAdditions : sms::Mod {
 				armSwing = -2.4f * (g.swing / 0.35f), armOut = 0.3f;
 			if (g.hurt > 0) // flinching from the water: arms up over him
 				armSwing = -2.0f, armOut = 0.4f * sgn;
+			if (spread > 0) // splatted: arms flung out wide
+				armSwing = 0, armOut = 1.3f * spread * sgn;
 			V shAt = fly(shoulder, add(mul(right, sgn * 1.0f), mul(fwd, -0.4f)), -sgn, armSwing, armOut);
 			frame(m, shAt, armSwing, armOut);
 			draw(gArm[side], m);
