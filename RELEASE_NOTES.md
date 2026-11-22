@@ -1,3 +1,9 @@
+## Christmas Additions 1.8.1
+
+Mod API: 1.8
+
+- Built with the final mod SDK 1.8.0, so the game no longer asks for a rebuild. Nothing else changed.
+
 ## Christmas Additions 1.8.0
 
 **New enemies (for levels that place them)**
