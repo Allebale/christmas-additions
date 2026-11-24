@@ -37,10 +37,7 @@ Next, in order:
 
 ## Later (Allebale, Nov 20: "add later")
 
-- **Ice weapon**: when Christmas Additions is installed, the FLUDD Weapons mod's black goop weapon becomes
-  an ice weapon, its textures white-blueish ice. Must stay a mod change (Chase's rule); the two mods are
-  separate, so Christmas Additions has to find and retexture the goop weapon's look itself, or FLUDD
-  Weapons offers a general hook for it. It must also act like ice (Allebale, Nov 20): enemies it hits
-  freeze, and the floor it lands on turns slippery.
+- **Ice weapon**: now FLUDD Weapons' own Ice goop weapon (1.4.2), beside its Black goop; this mod no longer
+  asks for it (its "FLUDD Weapons' black goop is ice" setting removed, Allebale, Nov 24).
 - (Footprints: not lost. The snow footprints and puffs are this mod's own (snow_steps); the Remastered game
   feature missing from snowman-enemy is only the wet prints after puddles, a reflections option.)

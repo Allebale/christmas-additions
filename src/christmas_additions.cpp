@@ -1647,34 +1647,6 @@ struct ChristmasAdditions : sms::Mod {
 		}
 	}
 
-	// The FLUDD Weapons mod's black goop as ice (its "fludd-weapons.goop" service): asked for while the option
-	// is on, given back as black goop when it is turned off or this mod unloads
-	struct FluddWeaponsGoop {
-		uint32_t size;
-		void (*set_ice)(int on);
-		int (*ice)(void);
-	};
-	bool iceAsked = false, iceKnown = false; // what FLUDD Weapons was last told; whether that is still so
-	void askIce(bool on)
-	{
-		iceKnown = true;
-		const SmsCoreApi* core = api().core;
-		if (!core->is_loaded("fludd-weapons"))
-			return;
-		const FluddWeaponsGoop* g = (const FluddWeaponsGoop*)core->require(handle(), "fludd-weapons.goop", 1);
-		if (!g || g->size < offsetof(FluddWeaponsGoop, set_ice) + sizeof(void*) || !g->set_ice)
-			return;
-		g->set_ice(on ? 1 : 0);
-		if (on != iceAsked)
-			info(on ? "FLUDD Weapons' black goop is ice" : "FLUDD Weapons' black goop is black goop again");
-		iceAsked = on;
-	}
-	~ChristmasAdditions()
-	{
-		if (iceAsked)
-			askIce(false);
-	}
-
 	// Gingerbread men: found once a stage (its markers), then each wanders round where he started (a spot
 	// picked within 7 m, walked to, a pause, the next). Mario within 12 m: he runs after him, and close enough
 	// he swings at him (a point of health and a knock back, then a moment before he can again). Jumped on,
@@ -2459,11 +2431,6 @@ struct ChristmasAdditions : sms::Mod {
 	void tick()
 	{
 		{
-			const bool want = setting("ice_goop", 1) != 0;
-			if (!iceKnown || want != iceAsked)
-				askIce(want);
-		}
-		{
 			SmsCamera cam;
 			memset(&cam, 0, sizeof cam);
 			cam.size = sizeof cam;
@@ -2600,17 +2567,11 @@ struct ChristmasAdditions : sms::Mod {
 		optionBool("no_moustache", "No Mario moustache", false);
 		optionBool("christmas_fludd", "FLUDD wrapped for Christmas", true);
 		optionBool("snowball_fludd", "FLUDD throws snowballs", false);
-		optionBool("ice_goop", "FLUDD Weapons' black goop is ice", true);
 		optionBool("gingerbread", "Gingerbread men walk about where a level puts them", true);
 		optionBool("gingerbread_chase", "Gingerbread men chase and hit Mario (jump on them)", true);
 		optionBool("baubles", "Bauble Bob-ombs walk about where a level puts them", true);
 		optionBool("baubles_chase", "Bauble Bob-ombs light up, chase Mario and explode (jump on them)", true);
 		optionBool("enemies_once", "Beaten gingerbread men and bauble Bob-ombs stay gone till the level loads", false);
-		// FLUDD Weapons loading (now or later): told again
-		on<SmsEvMod>(SMS_EV_MOD_LOADED, [this](SmsEvMod& e) {
-			if (e.id && !strcmp(e.id, "fludd-weapons"))
-				iceKnown = false;
-		});
 
 		// snow: the stage's markers looked for again, its prints and puffs gone with it
 		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) {
