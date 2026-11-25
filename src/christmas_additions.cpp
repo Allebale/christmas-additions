@@ -2683,3 +2683,81 @@ struct ChristmasAdditions : sms::Mod {
 } // namespace
 
 SMS_MOD_CLASS(ChristmasAdditions)
+
+#ifdef CA_EXPORT_EDITOR_MODELS
+// The world editor's look of the gingerbread men and bauble Bob-ombs (mod/editor/*.obj, shown on their marker
+// coins, in metres as OBJ files are): built by the same code the game draws them with, in their standing pose, as OBJ with vertex colours.
+// Made by tools/editor-models.sh; the files ship in the mod, and the editor reads them from the mod's folder.
+#include <cstdio>
+namespace {
+struct Obj {
+	FILE* f;
+	int n;
+	// a piece's corners through a frame: columns x, y, z and the origin
+	void add(const Mesh& m, const float t[3][4])
+	{
+		for (size_t i = 0; i < m.corners.size(); i++) {
+			const SmsCorner& k = m.corners[i];
+			const float x = t[0][0] * k.x + t[0][1] * k.y + t[0][2] * k.z + t[0][3];
+			const float y = t[1][0] * k.x + t[1][1] * k.y + t[1][2] * k.z + t[1][3];
+			const float z = t[2][0] * k.x + t[2][1] * k.y + t[2][2] * k.z + t[2][3];
+			// in metres, as 3D models are (100 game units)
+			fprintf(f, "v %.5f %.5f %.5f %.4f %.4f %.4f\n", x / 100, y / 100, z / 100, k.r / 255.0f, k.g / 255.0f, k.b / 255.0f);
+		}
+		for (size_t i = 0; i + 2 < m.corners.size(); i += 3)
+			fprintf(f, "f %d %d %d\n", n + (int)i + 1, n + (int)i + 2, n + (int)i + 3);
+		n += (int)m.corners.size();
+	}
+};
+void frameAt(float t[3][4], V cx, V cy, V cz, V at)
+{
+	const V c[4] = {cx, cy, cz, at};
+	for (int j = 0; j < 4; j++)
+		t[0][j] = c[j].x, t[1][j] = c[j].y, t[2][j] = c[j].z;
+}
+} // namespace
+
+int main(int argc, char** argv)
+{
+	const std::string dir = argc > 1 ? argv[1] : ".";
+	{ // a gingerbread man standing, x his right, y up, z forward; a cookie's thickness (0.62) front to back
+		Obj o = {fopen((dir + "/gingerbread.obj").c_str(), "w"), 0};
+		if (!o.f)
+			return 1;
+		fprintf(o.f, "# Christmas Additions: a gingerbread man (made by tools/editor-models.sh)\n");
+		const V X = v(1, 0, 0), Y = v(0, 1, 0), Z = v(0, 0, 0.62f);
+		float t[3][4];
+		Mesh body, arm[2], leg[2];
+		gingerBody(body);
+		frameAt(t, X, Y, Z, v(0, 0, 0)), o.add(body, t);
+		for (int s = 0; s < 2; s++) {
+			const float sgn = s ? 1.0f : -1.0f;
+			gingerLeg(leg[s], s ? 1 : -1), gingerArm(arm[s], s ? 1 : -1);
+			frameAt(t, X, Y, Z, v(kHipX * sgn, kHipY, 0)), o.add(leg[s], t);
+			frameAt(t, X, Y, Z, v(kShoulderX * sgn, kShoulderY, 0)), o.add(arm[s], t);
+		}
+		fclose(o.f);
+	}
+	{ // a bauble Bob-omb (its first look, red) on its feet: its own frame x up, y forward, z to its right
+		Obj o = {fopen((dir + "/bauble.obj").c_str(), "w"), 0};
+		if (!o.f)
+			return 1;
+		fprintf(o.f, "# Christmas Additions: a bauble Bob-omb (made by tools/editor-models.sh)\n");
+		const float R = 46, footY = 14; // kBombR, kBombFootY
+		float t[3][4];
+		const Rgb kA = kBaubleGold, kB = {255, 255, 255};
+		Mesh look, key, foot;
+		look.sphere(v(0, 0, 0), 1.0f, kBaubleBody[0], 16, 12);
+		baublePattern(look, 0, kA, kB);
+		baubleCap(look);
+		bombFace(look);
+		bombKey(key), bombFoot(foot);
+		const V mid = v(0, footY + R, 0);
+		frameAt(t, v(0, R, 0), v(0, 0, R), v(R, 0, 0), mid), o.add(look, t), o.add(key, t);
+		for (int s = -1; s <= 1; s += 2)
+			frameAt(t, v(0, R, 0), v(0, 0, R), v(R, 0, 0), v(0.42f * R * s, 0.16f * R, 0)), o.add(foot, t);
+		fclose(o.f);
+	}
+	return 0;
+}
+#endif
