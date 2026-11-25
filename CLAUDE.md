@@ -35,6 +35,11 @@ Next, in order:
   "leafR_jnt"; game 3818444, SDK 80f47b0). Allebale sent bianco0.szs: montemc/momc_model.bmd and
   montew/mow_model.bmd (materials _eye_mat, _fuku_mat (men), _hand_mat, _leafback_mat).
 
+- **Coins as Christmas presents** (Allebale, Nov 25, option On): coins from SMS_EV_ITEM_SETUP drawn as presents
+  (draw_triangles, all in one), the game's coin models hidden with parts->hide (shared: one call a kind); the HUD's
+  coin and blue coin pictures ("c_ic", "d_ic") through parts->hud_picture (game b9a9a38, SDK 664da12). Markers
+  ("Gingerbread N", "Bauble N") left out.
+
 ## Later (Allebale, Nov 20: "add later")
 
 - **Ice weapon**: now FLUDD Weapons' own Ice goop weapon (1.4.2), beside its Black goop; this mod no longer

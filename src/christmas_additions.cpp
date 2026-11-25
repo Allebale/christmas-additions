@@ -360,6 +360,121 @@ void bombPiece(Mesh& m, Rgb col)
 	}
 }
 
+// Christmas presents in place of coins (the game's own coins hidden, these drawn where each is, turning as coins
+// do): a box with a lid, a ribbon both ways round it and a bow on top. Its frame y up, its middle at the origin.
+// Coins gold with a red ribbon, red coins red with gold, blue coins blue with silver.
+struct PresentLook {
+	Rgb box, ribbon;
+};
+const PresentLook kPresentLooks[3] = {{{236, 186, 48}, {204, 26, 38}}, {{206, 28, 40}, {240, 196, 64}}, {{40, 92, 210}, {222, 228, 238}}};
+const float kPresentHalf = 24; // half its side
+// an axis-lined box (centre c, half sizes h), its faces turned outward
+static void presentBox(Mesh& m, V c, V h, Rgb col)
+{
+	for (int axis = 0; axis < 3; axis++)
+		for (int s = -1; s <= 1; s += 2) {
+			V n = v(axis == 0 ? (float)s : 0, axis == 1 ? (float)s : 0, axis == 2 ? (float)s : 0);
+			V u = axis == 0 ? v(0, 1, 0) : v(1, 0, 0), w = cross(n, u);
+			V mid = add(c, v(n.x * h.x, n.y * h.y, n.z * h.z));
+			V su = v(u.x * h.x, u.y * h.y, u.z * h.z), sw = v(w.x * h.x, w.y * h.y, w.z * h.z);
+			V a = sub(sub(mid, su), sw), b = sub(add(mid, su), sw), cc = add(add(mid, su), sw), d = add(sub(mid, su), sw);
+			if (dot(cross(sub(b, a), sub(cc, a)), n) < 0)
+				m.quad(a, d, cc, b, col);
+			else
+				m.quad(a, b, cc, d, col);
+		}
+}
+void present(Mesh& m, int kind)
+{
+	const PresentLook& k = kPresentLooks[kind < 0 || kind > 2 ? 0 : kind];
+	const float H = kPresentHalf, lid = 7, band = 5.5f;
+	presentBox(m, v(0, -lid * 0.5f, 0), v(H - 1.5f, H - lid * 0.5f, H - 1.5f), k.box);         // the box
+	presentBox(m, v(0, H - lid * 0.5f, 0), v(H + 1.5f, lid * 0.5f, H + 1.5f), k.box);          // its lid
+	presentBox(m, v(0, -lid * 0.5f + 0.2f, 0), v(band, H - lid * 0.5f + 0.2f, H - 1.0f), k.ribbon); // ribbon down the sides
+	presentBox(m, v(0, -lid * 0.5f + 0.2f, 0), v(H - 1.0f, H - lid * 0.5f + 0.2f, band), k.ribbon);
+	presentBox(m, v(0, H - lid * 0.5f, 0), v(band, lid * 0.5f + 0.3f, H + 2.0f), k.ribbon);     // and over the lid
+	presentBox(m, v(0, H - lid * 0.5f, 0), v(H + 2.0f, lid * 0.5f + 0.3f, band), k.ribbon);
+	for (int s = -1; s <= 1; s += 2) { // the bow: two loops and their tails
+		std::vector<V> c;
+		std::vector<float> r;
+		for (int i = 0; i <= 16; i++) {
+			const float t = 2 * kPi * i / 16;
+			c.push_back(v(s * (9 + 8 * cosf(t)), H + 6 + 7 * sinf(t) + 3, 2.5f * sinf(t)));
+			r.push_back(2.6f);
+		}
+		m.tube(c, r, k.ribbon, 8, false);
+	}
+	m.sphere(v(0, H + 6, 0), 5, k.ribbon, 10, 6); // its knot
+}
+
+// The HUD's picture of one (the coin counter's coin, the blue coins' one): a present seen from the front, a little
+// from above, 64 x 64, its edges soft
+static void presentPicture(std::vector<uint8_t>& px, int kind)
+{
+	const PresentLook& k = kPresentLooks[kind < 0 || kind > 2 ? 0 : kind];
+	const int N = 64;
+	px.assign(N * N * 4, 0);
+	// cover: each pixel's colour and how much of it is drawn (4 x 4 samples)
+	for (int y = 0; y < N; y++)
+		for (int x = 0; x < N; x++) {
+			float sr = 0, sg = 0, sb = 0, sa = 0;
+			for (int sy = 0; sy < 4; sy++)
+				for (int sx = 0; sx < 4; sx++) {
+					const float fx = (x + (sx + 0.5f) / 4) / N * 2 - 1, fy = (y + (sy + 0.5f) / 4) / N * 2 - 1; // -1..1, y down
+					Rgb c;
+					float shade = 1;
+					bool in = false;
+					const float ax = fabsf(fx);
+					// the bow's two loops (rings) above the lid, and its knot
+					const float lx = ax - 0.27f, ly = fy + 0.62f, ring = sqrtf(lx * lx / 0.07f + ly * ly / 0.03f);
+					if (fy < -0.4f && ring > 0.45f && ring < 1.0f)
+						in = true, c = k.ribbon, shade = 0.85f + 0.15f * (1 - fabsf(ly) * 4);
+					else if (ax < 0.11f && fy > -0.62f && fy < -0.42f)
+						in = true, c = k.ribbon, shade = 0.95f;
+					else if (ax < 0.86f && fy > -0.42f && fy < -0.12f) { // the lid
+						in = true, c = ax < 0.14f ? k.ribbon : k.box, shade = 1.08f - 0.1f * (fy + 0.42f) / 0.3f;
+					} else if (ax < 0.76f && fy >= -0.12f && fy < 0.9f) { // the box
+						const bool band = ax < 0.14f;
+						in = true, c = band ? k.ribbon : k.box;
+						shade = 0.95f - 0.35f * (fy + 0.12f) / 1.02f + (fx < -0.5f ? 0.08f : 0);
+						if (fy < -0.06f)
+							shade *= 0.7f; // under the lid
+					}
+					if (!in)
+						continue;
+					const bool edge = (fy > -0.43f && fy < -0.39f && ax < 0.86f) || (fy > -0.15f && fy < -0.11f && ax < 0.86f);
+					if (edge)
+						shade *= 0.7f;
+					shade = shade < 0 ? 0 : shade > 1.25f ? 1.25f : shade;
+					sr += fminf(255, c.r * shade), sg += fminf(255, c.g * shade), sb += fminf(255, c.b * shade), sa += 1;
+				}
+			uint8_t* o = &px[(y * N + x) * 4];
+			if (sa > 0)
+				o[0] = (uint8_t)(sr / sa), o[1] = (uint8_t)(sg / sa), o[2] = (uint8_t)(sb / sa);
+			o[3] = (uint8_t)(255 * sa / 16);
+		}
+	// a dark outline round it, as the HUD's own pictures have
+	std::vector<uint8_t> a(N * N);
+	for (int i = 0; i < N * N; i++)
+		a[i] = px[i * 4 + 3];
+	for (int y = 0; y < N; y++)
+		for (int x = 0; x < N; x++) {
+			uint8_t* o = &px[(y * N + x) * 4];
+			int near1 = 0;
+			for (int dy = -2; dy <= 2; dy++)
+				for (int dx = -2; dx <= 2; dx++) {
+					const int xx = x + dx, yy = y + dy;
+					if (xx >= 0 && yy >= 0 && xx < N && yy < N && a[yy * N + xx] > near1)
+						near1 = a[yy * N + xx];
+				}
+			if (o[3] < near1) { // in the outline: dark under the picture
+				const float f = o[3] / 255.0f;
+				o[0] = (uint8_t)(o[0] * f + 40 * (1 - f)), o[1] = (uint8_t)(o[1] * f + 20 * (1 - f)), o[2] = (uint8_t)(o[2] * f + 16 * (1 - f));
+				o[3] = (uint8_t)near1;
+			}
+		}
+}
+
 // Gingerbread men (the mod's own, walking about where a level marks with invisible coins named "Gingerbread N"):
 // a cookie figure in pieces that swing as he walks, tall and long-legged as Il Piantissimo. Built round
 // (tubes and balls) in his own frame, x to his right, y up, z forward, and drawn squashed to a cookie's
@@ -1816,6 +1931,101 @@ struct ChristmasAdditions : sms::Mod {
 	// explodes (a point of health and a knock back within 3 m). Water puts the fuse out for a while. Jumped on,
 	// it shatters like a glass bauble and leaves a coin. Back where it started 25 s after either.
 	static constexpr float kBombR = 46, kBombFootY = 14; // its radius; how high its feet hold it
+	// Coins as Christmas presents: every coin the stage makes (SMS_EV_ITEM_SETUP) drawn as one, turning, while
+	// it is out (not taken, not waiting in a box); the game's coin models (shared by all coins of a kind) hidden.
+	// The level's markers for this mod's enemies ("Gingerbread N", "Bauble N") are left out.
+	struct CoinSeen {
+		SmsObject o;
+		int kind;   // 0 coin, 1 red, 2 blue
+		bool taken;
+		int marker; // -1 not looked at yet, 0 a coin, 1 a marker
+	};
+	std::vector<CoinSeen> coinsSeen;
+	std::vector<SmsCorner> presentModel[3], presentBuf;
+	bool coinModelHidden[3] = {false, false, false};
+	bool hudPresents = false; // the HUD's coin pictures asked for
+	bool coinsStageLive = false; // the stage's coins all made (its next coin made is a new stage's)
+	static bool markerName(const char* n)
+	{
+		if (!n)
+			return false;
+		if (!strncmp(n, "Bauble ", 7))
+			return true;
+		return !strncmp(n, "Gingerbread ", 12) && strncmp(n, "Gingerbread coin", 16) != 0;
+	}
+	~ChristmasAdditions() { presentsHud(false); } // the HUD's own coins again from the next stage
+	void presentsHud(bool on)
+	{
+		if (!parts || parts->size < offsetof(SmsPartsApi, hud_picture) + sizeof(void*) || !parts->hud_picture || on == hudPresents)
+			return;
+		hudPresents = on;
+		if (!on) {
+			parts->hud_picture("c_ic", nullptr, 0, 0), parts->hud_picture("d_ic", nullptr, 0, 0);
+			return;
+		}
+		std::vector<uint8_t> px;
+		presentPicture(px, 0);
+		parts->hud_picture("c_ic", &px[0], 64, 64);
+		presentPicture(px, 2);
+		parts->hud_picture("d_ic", &px[0], 64, 64);
+	}
+	void showCoinModels(bool shown)
+	{
+		for (size_t i = 0; i < coinsSeen.size(); i++) {
+			CoinSeen& c = coinsSeen[i];
+			if (coinModelHidden[c.kind] == !shown || c.taken)
+				continue;
+			if (parts->hide(c.o, "", shown ? 0 : 1) > 0)
+				coinModelHidden[c.kind] = !shown;
+		}
+	}
+	void presentsTick(const SmsPlayer& p)
+	{
+		const bool on = setting("presents", 1) != 0;
+		presentsHud(on);
+		if (!on) {
+			showCoinModels(true);
+			return;
+		}
+		showCoinModels(false);
+		if (presentModel[0].empty())
+			for (int k = 0; k < 3; k++) {
+				Mesh m;
+				present(m, k);
+				presentModel[k] = m.corners;
+			}
+		const V eye = viewPoint(p);
+		const float spin = (float)fmod(api().core->time() * 2.2, 2 * kPi);
+		presentBuf.clear();
+		for (size_t i = 0; i < coinsSeen.size(); i++) {
+			CoinSeen& c = coinsSeen[i];
+			if (c.taken)
+				continue;
+			if (c.marker < 0)
+				c.marker = game().object_name && markerName(game().object_name(c.o)) ? 1 : 0;
+			if (c.marker)
+				continue;
+			if (api().actor->flags(c.o) & (SMS_ACTOR_FLAG_DEAD | SMS_ACTOR_FLAG_HIDDEN))
+				continue;
+			SmsVec3 at;
+			if (!game().object_position(c.o, &at))
+				continue;
+			const float dx = at.x - eye.x, dy = at.y - eye.y, dz = at.z - eye.z;
+			if (dx * dx + dy * dy + dz * dz > 9000.0f * 9000.0f)
+				continue;
+			const float a = spin + (float)(i % 7) * 0.9f, ca = cosf(a), sa = sinf(a);
+			const std::vector<SmsCorner>& model = presentModel[c.kind];
+			for (size_t k = 0; k < model.size(); k++) {
+				SmsCorner q = model[k];
+				const float x = q.x * ca + q.z * sa, z = -q.x * sa + q.z * ca;
+				q.x = at.x + x, q.y = at.y + q.y, q.z = at.z + z;
+				presentBuf.push_back(q);
+			}
+		}
+		if (!presentBuf.empty())
+			api().models->draw_triangles(&presentBuf[0], (int)presentBuf.size());
+	}
+
 	void bombsTick(const SmsPlayer& p)
 	{
 		const double t = api().core->time();
@@ -2550,11 +2760,13 @@ struct ChristmasAdditions : sms::Mod {
 		// bauble Bob-ombs: where a level puts invisible coins named "Bauble N"
 		if (setting("baubles", 1))
 			bombsTick(p);
+		presentsTick(p);
 	}
 
 	int load() override
 	{
 		optionBool("santa_hats", "Santa hats on Piantas", true);
+		optionBool("presents", "Coins are Christmas presents (in the HUD too)", true);
 		optionBool("winter_clothes", "Winter colours on Piantas' clothes", true);
 		optionBool("snowmen", "Strollin' Stu stacks are snowmen", true);
 		optionBool("exit_return", "Back through a level's door, start beside it", true);
@@ -2671,7 +2883,20 @@ struct ChristmasAdditions : sms::Mod {
 				warn("too few models left for the bauble Bob-ombs (the game keeps 64 for all mods)");
 		}
 
-		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), bombs.clear(), baubleLooks = 0, bombClock = -1, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
+		on<SmsEvItemSetup>(SMS_EV_ITEM_SETUP, [this](SmsEvItemSetup& e) {
+			if (coinsStageLive) // the first of a new stage's: the last one's are gone
+				coinsSeen.clear(), coinsStageLive = false;
+			if (e.kind >= SMS_ITEM_COIN && e.kind <= SMS_ITEM_BLUE_COIN && coinsSeen.size() < 4096) {
+				CoinSeen c = {e.object, e.kind == SMS_ITEM_COIN ? 0 : e.kind == SMS_ITEM_RED_COIN ? 1 : 2, false, -1};
+				coinsSeen.push_back(c);
+			}
+		});
+		on<SmsEvItem>(SMS_EV_ITEM_COLLECTED, [this](SmsEvItem& e) {
+			for (size_t i = 0; i < coinsSeen.size(); i++)
+				if (coinsSeen[i].o == e.item)
+					coinsSeen[i].taken = true;
+		});
+		on(SMS_EV_STAGE_LOADED, [this](SmsEvent&) { coinsStageLive = true, coinModelHidden[0] = coinModelHidden[1] = coinModelHidden[2] = false; dressed.clear(), snowy.clear(), bare.clear(), wasUnder.clear(), bombs.clear(), baubleLooks = 0, bombClock = -1, gingers.clear(), gingerLooks = 0, puddles.clear(), gingerCoins.clear(), nextCoin = 0; }); // the tints (and what was hidden) went with the old stage
 		on(SMS_EV_TICK, [this](SmsEvent&) { tick(); });
 		on<SmsEvWaterEmit>(SMS_EV_WATER_EMIT, [this](SmsEvWaterEmit& e) -> int { return onWaterEmit(e); });
 		on<SmsEvWaterLand>(SMS_EV_WATER_LAND, [this](SmsEvWaterLand& e) -> int { return onWaterLand(e); });
@@ -2757,6 +2982,24 @@ int main(int argc, char** argv)
 		for (int s = -1; s <= 1; s += 2)
 			frameAt(t, v(0, R, 0), v(0, 0, R), v(R, 0, 0), v(0.42f * R * s, 0.16f * R, 0)), o.add(foot, t);
 		fclose(o.f);
+	}
+	if (argc > 2) { // a look at the presents (not shipped): present0..2.obj and present0..2.rgba
+		for (int k = 0; k < 3; k++) {
+			char name[64];
+			snprintf(name, sizeof name, "%s/present%d.obj", argv[2], k);
+			Obj o = {fopen(name, "w"), 0};
+			Mesh m;
+			present(m, k);
+			float t[3][4];
+			frameAt(t, v(1, 0, 0), v(0, 1, 0), v(0, 0, 1), v(0, 0, 0)), o.add(m, t);
+			fclose(o.f);
+			std::vector<uint8_t> px;
+			presentPicture(px, k);
+			snprintf(name, sizeof name, "%s/present%d.rgba", argv[2], k);
+			FILE* f = fopen(name, "wb");
+			fwrite(&px[0], 1, px.size(), f);
+			fclose(f);
+		}
 	}
 	return 0;
 }

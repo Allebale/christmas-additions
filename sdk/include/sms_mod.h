@@ -2367,6 +2367,12 @@ typedef struct SmsPartsApi {
 	   This one character only; kept until set again or the stage changes. 1 done, 0 not. */
 	const char* (*worn_name)(SmsObject actor, int index);
 	int (*hide_worn)(SmsObject actor, int index, int hidden);
+	/* (Check size reaches it.) Its model's animations held still (1) or let go (0). */
+	int (*freeze_anim)(SmsObject actor, int frozen);
+	/* (Check size reaches it.) The HUD's picture pane named `pane` ("c_ic" the coin counter's coin, "d_ic" the
+	   blue coins') shown with `rgba` (w x h, powers of two 4 to 256, rows from the top; copied) from its next
+	   draw; NULL: the game's own again from the next stage. 1 done. */
+	int (*hud_picture)(const char* pane, const uint8_t* rgba, int w, int h);
 } SmsPartsApi;
 #define SMS_PARTS_MARIO 0
 #define SMS_PARTS_YOSHI 1
